@@ -20,10 +20,6 @@ static void handle_signal(int sig)
     snprintf(message, sizeof(message), "Caught signal: %d (%s)\n", sig, strsignal(sig));
     write(STDOUT_FILENO, message, strlen(message));
 
-    if(sig == SIGCHLD)
-    {
-        snprintf(message, sizeof(message), "\n%s\n", "Getting SIGCHLD...");
-    }
     if(sig == SIGINT)
     {
         running = 0;
@@ -44,12 +40,6 @@ void setup_signal(void)
     if(sigaction(SIGINT, &sa, NULL) == -1)
     {
         perror("sigaction SIGINT");
-        exit(EXIT_FAILURE);
-    }
-
-    if(sigaction(SIGCHLD, &sa, NULL) == -1)
-    {
-        perror("sigaction SIGCHLD");
         exit(EXIT_FAILURE);
     }
 }

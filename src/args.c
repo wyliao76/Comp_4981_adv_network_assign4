@@ -10,8 +10,13 @@
 
 #define UNKNOWN_OPTION_MESSAGE_LEN 22
 #define BASE_TEN 10
+#define INADDRESS "0.0.0.0"
+#define PORT "8080"
 
-_Noreturn void usage(const char *binary_name, int exit_code, const char *message)
+static _Noreturn void usage(const char *binary_name, int exit_code, const char *message);
+static int            convert_str_t_l(const char *str);
+
+static _Noreturn void usage(const char *binary_name, int exit_code, const char *message)
 {
     if(message)
     {
@@ -40,6 +45,10 @@ void get_arguments(args_t *args, int argc, char *argv[])
         {"help",    no_argument,       NULL, 'h'},
         {NULL,      0,                 NULL, 0  }
     };
+
+    args->addr = getenv("ADDR") ? getenv("ADDR") : INADDRESS;
+    convert_port(getenv("PORT") ? getenv("PORT") : PORT, &args->port);
+    verbose = convert_str_t_l(getenv("VERBOSE"));
 
     while((opt = getopt_long(argc, argv, "ha:p:A:P:vd", long_options, NULL)) != -1)
     {
@@ -77,10 +86,10 @@ void get_arguments(args_t *args, int argc, char *argv[])
     }
 }
 
-int convert(const char *str)
+int convert_str_t_l(const char *str)
 {
     char *endptr;
-    long  sm_fd;
+    long  fd;
 
     errno = 0;
     if(!str)
@@ -88,10 +97,10 @@ int convert(const char *str)
         return -1;
     }
 
-    sm_fd = strtol(str, &endptr, BASE_TEN);
+    fd = strtol(str, &endptr, BASE_TEN);
 
     // Check for conversion errors
-    if((errno == ERANGE && (sm_fd == INT_MAX || sm_fd == INT_MIN)) || (errno != 0 && sm_fd > 2))
+    if((errno == ERANGE && (fd == INT_MAX || fd == INT_MIN)) || (errno != 0 && fd > 2))
     {
         fprintf(stderr, "Error during conversion: %s\n", strerror(errno));
         return -1;
@@ -111,6 +120,6 @@ int convert(const char *str)
         return -1;
     }
 
-    printf("sm_fd: %ld\n", sm_fd);
-    return (int)sm_fd;
+    printf("fd: %ld\n", fd);
+    return (int)fd;
 }

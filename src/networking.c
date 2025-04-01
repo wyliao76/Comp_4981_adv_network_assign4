@@ -218,3 +218,62 @@ ssize_t convert_port(const char *str, in_port_t *port)
     *port = (in_port_t)val;
     return ERR_NONE;
 }
+
+void send_fd(int socket, fd_info_t *info)
+{
+    struct msghdr   msg = {0};
+    struct iovec    io;
+    struct cmsghdr *cmsg;
+    char            control[CMSG_SPACE(sizeof(int))];
+
+    io.iov_base        = &info->fd_num;
+    io.iov_len         = sizeof(info->fd_num);
+    msg.msg_iov        = &io;
+    msg.msg_iovlen     = 1;
+    msg.msg_control    = control;
+    msg.msg_controllen = sizeof(control);
+
+    cmsg             = CMSG_FIRSTHDR(&msg);
+    cmsg->cmsg_level = SOL_SOCKET;
+    cmsg->cmsg_type  = SCM_RIGHTS;
+    cmsg->cmsg_len   = CMSG_LEN(sizeof(int));
+
+    memcpy(CMSG_DATA(cmsg), &info->fd, sizeof(int));
+
+    if(sendmsg(socket, &msg, 0) < 0)
+    {
+        perror("sendmsg");
+        exit(EXIT_FAILURE);
+    }
+}
+
+ssize_t recv_fd(int socket, fd_info_t *info)
+{
+    struct msghdr   msg = {0};
+    struct iovec    io;
+    struct cmsghdr *cmsg;
+    char            control[CMSG_SPACE(sizeof(int))];
+
+    io.iov_base    = &info->fd_num;
+    io.iov_len     = sizeof(info->fd_num);
+    msg.msg_iov    = &io;
+    msg.msg_iovlen = 1;
+
+    msg.msg_control    = control;
+    msg.msg_controllen = sizeof(control);
+
+    if(recvmsg(socket, &msg, 0) < 0)
+    {
+        perror("recvmsg");
+        exit(EXIT_FAILURE);
+    }
+    cmsg = CMSG_FIRSTHDR(&msg);
+
+    if(cmsg && cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_RIGHTS)
+    {
+        memcpy(&info->fd, CMSG_DATA(cmsg), sizeof(int));
+        return 0;
+    }
+
+    return -1;
+}
