@@ -12,6 +12,20 @@
 #define BACKLOG 5
 #define MAX_CLIENTS 64
 #define MAX_FDS (MAX_CLIENTS + 1)
+#define NUM_WORKERS 3
+
+static void worker_process(int worker_id)
+{
+    printf("Worker %d (PID: %d) started\n", worker_id, getpid());
+
+    // Worker loop: Replace this with actual worker logic
+    while(1)
+    {
+        printf("Worker %d is handling tasks...\n", worker_id);
+        sleep(3);    // Simulate work
+        break;
+    }
+}
 
 static fsm_state_t event_loop(void *args);
 
@@ -160,17 +174,75 @@ int main(int argc, char *argv[], char *envp[])
         retval = EXIT_FAILURE;
     }
 
+    // monitor
     if(pid == 0)
     {
         fd_info_t info;
+        pid_t     pids[NUM_WORKERS];
 
-        PRINT_VERBOSE("%s\n", "child process");
-        if(recv_fd(args.sockfd[1], &info) < 0)
+        PRINT_VERBOSE("%s\n", "monitor");
+
+        PRINT_VERBOSE("%s\n", "creating workers...");
+        // workers
+        for(int i = 0; i < NUM_WORKERS; i++)
         {
-            perror("recv_fd error");
+            pids[i] = fork();
+            if(pids[i] < 0)
+            {
+                perror("fork failed");
+                exit(EXIT_FAILURE);
+            }
+            else if(pids[i] == 0)
+            {
+                PRINT_VERBOSE("%s\n", "workers spawned");
+                if(recv_fd(args.sockfd[1], &info) < 0)
+                {
+                    perror("recv_fd error");
+                }
+                PRINT_VERBOSE("%s fd: %d num: %d\n", "receiving fd from monitor...", info.fd, info.fd_num);
+
+                worker_process(i);
+                exit(EXIT_SUCCESS);    // Prevent workers from continuing the parent logic
+            }
         }
 
-        PRINT_VERBOSE("%s fd: %d num: %d\n", "receiving fd from monitor...", info.fd, info.fd_num);
+        while(running)
+        {
+            int status;
+
+            pid_t exited_pid = waitpid(-1, &status, 0);
+
+            if(exited_pid > 0)
+            {
+                PRINT_VERBOSE("Worker (PID: %d) exited. Restarting...\n", exited_pid);
+
+                PRINT_VERBOSE("%s\n", "creating workers...");
+                for(int i = 0; i < NUM_WORKERS; i++)
+                {
+                    if(pids[i] == exited_pid)
+                    {
+                        pids[i] = fork();
+                        if(pids[i] < 0)
+                        {
+                            perror("fork failed");
+                            exit(EXIT_FAILURE);
+                        }
+                        else if(pids[i] == 0)
+                        {
+                            PRINT_VERBOSE("%s\n", "workers spawned");
+                            if(recv_fd(args.sockfd[1], &info) < 0)
+                            {
+                                perror("recv_fd error");
+                            }
+                            PRINT_VERBOSE("%s fd: %d num: %d\n", "receiving fd from monitor...", info.fd, info.fd_num);
+                            worker_process(i);
+                            exit(EXIT_SUCCESS);
+                        }
+                        break;
+                    }
+                }
+            }
+        }
 
         exit(EXIT_SUCCESS);
     }
