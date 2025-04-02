@@ -8,21 +8,34 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/wait.h>
 
 #define BACKLOG 5
 #define MAX_CLIENTS 64
 #define MAX_FDS (MAX_CLIENTS + 1)
 #define NUM_WORKERS 3
+#define RAW_SIZE 8192
 
-static void worker_process(int worker_id)
+typedef struct request_t
 {
-    printf("Worker %d (PID: %d) started\n", worker_id, getpid());
+    char      *raw;
+    fd_info_t *info;
+    int       *sockfd;
+    int        worker_id;
+    int        err;
+} request_t;
+
+static void worker_process(void *args)
+{
+    const request_t *request = (request_t *)args;
+    printf("Worker %d (PID: %d) started\n", request->worker_id, getpid());
 
     // Worker loop: Replace this with actual worker logic
     while(1)
     {
-        printf("Worker %d is handling tasks...\n", worker_id);
+        printf("Worker %d is handling tasks...\n", request->worker_id);
         sleep(3);    // Simulate work
+        send_fd(*request->sockfd, request->info);
         break;
     }
 }
@@ -41,7 +54,10 @@ static fsm_state_t event_loop(void *args)
     fds[0].fd     = *server_args->fd;
     fds[0].events = POLLIN;
 
-    for(int i = 1; i < MAX_FDS; i++)
+    fds[1].fd     = server_args->sockfd[1];
+    fds[1].events = POLLIN;
+
+    for(int i = 2; i < MAX_FDS; i++)
     {
         fds[i].fd = -1;
     }
@@ -98,8 +114,20 @@ static fsm_state_t event_loop(void *args)
                 continue;
             }
         }
+        if(fds[1].revents & POLLIN)
+        {
+            fd_info_t info;
+            if(recv_fd(fds[1].fd, &info) < 0)
+            {
+                perror("recv_fd error");
+            }
+            PRINT_VERBOSE("%s fd: %d num: %d\n", "receiving fd from worker...", info.fd, info.fd_num);
+            close(fds[info.fd_num].fd);
+            fds[info.fd_num].fd     = -1;
+            fds[info.fd_num].events = POLLIN;
+        }
         // Check existing clients for data
-        for(int i = 1; i < MAX_FDS; i++)
+        for(int i = 2; i < MAX_FDS; i++)
         {
             if(fds[i].fd != -1)
             {
@@ -108,12 +136,11 @@ static fsm_state_t event_loop(void *args)
                     fd_info_t info;
 
                     info.fd     = fds[i].fd;
-                    info.fd_num = fds[i].fd;
+                    info.fd_num = i;
                     PRINT_VERBOSE("%s fd: %d num: %d\n", "Dispatching to workers...", fds[i].fd, fds[i].fd);
 
+                    fds[i].revents = 0;
                     send_fd(server_args->sockfd[0], &info);
-
-                    close(fds[i].fd);
                 }
 
                 if(fds[i].revents & (POLLHUP | POLLERR))
@@ -178,9 +205,19 @@ int main(int argc, char *argv[], char *envp[])
     if(pid == 0)
     {
         fd_info_t info;
+        request_t request;
         pid_t     pids[NUM_WORKERS];
 
         PRINT_VERBOSE("%s\n", "monitor");
+
+        request.raw = (char *)malloc(RAW_SIZE);
+        if(!request.raw)
+        {
+            perror("failed to malloc");
+            exit(EXIT_FAILURE);
+        }
+        request.sockfd = &args.sockfd[0];
+        request.info   = &info;
 
         PRINT_VERBOSE("%s\n", "creating workers...");
         // workers
@@ -194,6 +231,7 @@ int main(int argc, char *argv[], char *envp[])
             }
             else if(pids[i] == 0)
             {
+                // int err;
                 PRINT_VERBOSE("%s\n", "workers spawned");
                 if(recv_fd(args.sockfd[1], &info) < 0)
                 {
@@ -201,7 +239,14 @@ int main(int argc, char *argv[], char *envp[])
                 }
                 PRINT_VERBOSE("%s fd: %d num: %d\n", "receiving fd from monitor...", info.fd, info.fd_num);
 
-                worker_process(i);
+                request.worker_id = i;
+
+                // if(setSocketNonBlocking(info.fd, &err) < 0)
+                // {
+                //     perror("set non-blocking failed");
+                // }
+
+                worker_process(&request);
                 exit(EXIT_SUCCESS);    // Prevent workers from continuing the parent logic
             }
         }
@@ -235,7 +280,10 @@ int main(int argc, char *argv[], char *envp[])
                                 perror("recv_fd error");
                             }
                             PRINT_VERBOSE("%s fd: %d num: %d\n", "receiving fd from monitor...", info.fd, info.fd_num);
-                            worker_process(i);
+
+                            request.worker_id = i;
+
+                            worker_process(&request);
                             exit(EXIT_SUCCESS);
                         }
                         break;

@@ -1,1 +1,1 @@
-server src/server.c src/utils.c src/args.c src/networking.c include/utils.h include/args.h include/networking.h
+server src/server.c src/utils.c src/args.c src/networking.c include/utils.h include/args.h include/networking.h src/io.c include/io.h
