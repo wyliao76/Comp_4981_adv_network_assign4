@@ -131,11 +131,11 @@ static int setup_tcp_server(const struct sockaddr_storage *addr, socklen_t addr_
         goto done;
     }
 
-    result = setSocketNonBlocking(fd, err);
-    if(result == -1)
-    {
-        goto done;
-    }
+    // result = setSocketNonBlocking(fd, err);
+    // if(result == -1)
+    // {
+    //     goto done;
+    // }
 
     result = setSockReuse(fd, err);
 
@@ -219,15 +219,15 @@ ssize_t convert_port(const char *str, in_port_t *port)
     return ERR_NONE;
 }
 
-void send_fd(int socket, fd_info_t *info)
+int send_fd(int socket, int fd, int fd_num)
 {
     struct msghdr   msg = {0};
     struct iovec    io;
     struct cmsghdr *cmsg;
     char            control[CMSG_SPACE(sizeof(int))];
 
-    io.iov_base        = &info->fd_num;
-    io.iov_len         = sizeof(info->fd_num);
+    io.iov_base        = &fd_num;
+    io.iov_len         = sizeof(fd_num);
     msg.msg_iov        = &io;
     msg.msg_iovlen     = 1;
     msg.msg_control    = control;
@@ -238,24 +238,26 @@ void send_fd(int socket, fd_info_t *info)
     cmsg->cmsg_type  = SCM_RIGHTS;
     cmsg->cmsg_len   = CMSG_LEN(sizeof(int));
 
-    memcpy(CMSG_DATA(cmsg), &info->fd, sizeof(int));
+    memcpy(CMSG_DATA(cmsg), &fd, sizeof(int));
 
     if(sendmsg(socket, &msg, 0) < 0)
     {
         perror("sendmsg");
         exit(EXIT_FAILURE);
     }
+    return 0;
 }
 
-ssize_t recv_fd(int socket, fd_info_t *info)
+int recv_fd(int socket, int *fd_num)
 {
     struct msghdr   msg = {0};
     struct iovec    io;
     struct cmsghdr *cmsg;
     char            control[CMSG_SPACE(sizeof(int))];
+    int             fd;
 
-    io.iov_base    = &info->fd_num;
-    io.iov_len     = sizeof(info->fd_num);
+    io.iov_base    = fd_num;
+    io.iov_len     = sizeof(*fd_num);
     msg.msg_iov    = &io;
     msg.msg_iovlen = 1;
 
@@ -267,13 +269,38 @@ ssize_t recv_fd(int socket, fd_info_t *info)
         perror("recvmsg");
         exit(EXIT_FAILURE);
     }
+
     cmsg = CMSG_FIRSTHDR(&msg);
 
     if(cmsg && cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_RIGHTS)
     {
-        memcpy(&info->fd, CMSG_DATA(cmsg), sizeof(int));
-        return 0;
+        memcpy(&fd, CMSG_DATA(cmsg), sizeof(int));
+        return fd;
     }
 
     return -1;
+}
+
+// fix later
+ssize_t send_number(int socket, int fd_num)
+{
+    ssize_t sent = send(socket, &fd_num, sizeof(fd_num), 0);
+    if(sent <= 0)
+    {
+        perror("send");
+        return -1;
+    }
+    return 0;
+}
+
+// fix later
+ssize_t recv_number(int socket, int *fd_num)
+{
+    ssize_t received = recv(socket, fd_num, sizeof(*fd_num), 0);
+    if(received <= 0)
+    {
+        perror("recv");
+        return -1;
+    }
+    return 0;
 }

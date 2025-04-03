@@ -1,17 +1,43 @@
 #include "io.h"
+#include "utils.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <p101_c/p101_stdio.h>
 #include <p101_c/p101_stdlib.h>
 #include <string.h>
+#include <sys/socket.h>
+#include <time.h>
 #include <unistd.h>
+
+#define TIMEOUT 5000
+#define MILLI_SEC 1000
+
+static long header_end(char *buf)
+{
+    const char *pos = strstr(buf, "\r\n\r\n");
+
+    if(pos)
+    {
+        printf("Found at position: %td\n", pos - buf);
+        return pos - buf;
+    }
+    printf("Not found\n");
+    return -1;
+}
 
 ssize_t read_fully(int fd, char *buf, size_t size, int *err)
 {
     size_t bytes_read = 0;
-    while(bytes_read < size)
+    time_t current;
+    time_t end;
+
+    current = (time_t)(clock() * MILLI_SEC / CLOCKS_PER_SEC);
+    end     = current + TIMEOUT;
+
+    while(bytes_read < size && current <= end)
     {
         ssize_t result = read(fd, buf + bytes_read, size - bytes_read);
+        current        = (time_t)(clock() * MILLI_SEC / CLOCKS_PER_SEC);
         if(result == 0)
         {
             break;    // EOF reached
@@ -20,12 +46,16 @@ ssize_t read_fully(int fd, char *buf, size_t size, int *err)
         {
             if(errno == EINTR || errno == EAGAIN)
             {
-                continue;    // Interrupted, retry
+                continue;
             }
             *err = errno;
-            return -1;    // Error occurred
+            return -1;
         }
         bytes_read += (size_t)result;
+        if(header_end(buf) > 0)
+        {
+            break;
+        }
     }
     return (ssize_t)bytes_read;
 }
@@ -33,17 +63,24 @@ ssize_t read_fully(int fd, char *buf, size_t size, int *err)
 ssize_t write_fully(int fd, const void *buf, ssize_t size, int *err)
 {
     size_t bytes_written = 0;
-    while(bytes_written < (size_t)size)
+    time_t current;
+    time_t end;
+
+    current = (time_t)(clock() * MILLI_SEC / CLOCKS_PER_SEC);
+    end     = current + TIMEOUT;
+
+    while(bytes_written < (size_t)size && current <= end)
     {
         ssize_t result = write(fd, (const char *)buf + bytes_written, (size_t)size - bytes_written);
+        current        = (time_t)(clock() * MILLI_SEC / CLOCKS_PER_SEC);
         if(result == -1)
         {
             if(errno == EINTR || errno == EAGAIN)
             {
-                continue;    // Interrupted, retry
+                continue;
             }
             *err = errno;
-            return -1;    // Error occurred
+            return -1;
         }
         bytes_written += (size_t)result;
     }
