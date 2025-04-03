@@ -16,6 +16,7 @@ typedef struct args_t
     int        *fd;
     int         sockfd[2];
     char        buf[BUF_SIZE];
+    int         workers;
     char       *argv[2];
     char       *envp[ARGC];
 } args_t;

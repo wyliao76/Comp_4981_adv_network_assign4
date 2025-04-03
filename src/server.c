@@ -14,7 +14,6 @@
 #define BACKLOG 5
 #define MAX_CLIENTS 3
 #define MAX_FDS (MAX_CLIENTS + 2)
-#define NUM_WORKERS 3
 
 static void worker_process(int sockfd)
 {
@@ -218,13 +217,20 @@ int main(int argc, char *argv[], char *envp[])
     // monitor
     if(monitor_pid == 0)
     {
-        pid_t pids[NUM_WORKERS];
+        pid_t *pids;
+
+        pids = (pid_t *)malloc((size_t)args.workers * sizeof(pid_t));
+        if(!pids)
+        {
+            fprintf(stderr, "failed to malloc\n");
+            exit(EXIT_FAILURE);
+        }
 
         PRINT_VERBOSE("%s\n", "monitor");
 
-        PRINT_VERBOSE("%s\n", "creating workers...");
+        PRINT_VERBOSE("creating %d %s\n", args.workers, "workers...");
         // workers
-        for(int i = 0; i < NUM_WORKERS; i++)
+        for(int i = 0; i < args.workers; i++)
         {
             pids[i] = fork();
             if(pids[i] < 0)
@@ -249,7 +255,7 @@ int main(int argc, char *argv[], char *envp[])
                 PRINT_VERBOSE("Worker (PID: %d) exited. Restarting...\n", exited_pid);
 
                 PRINT_VERBOSE("%s\n", "creating workers...");
-                for(int i = 0; i < NUM_WORKERS; i++)
+                for(int i = 0; i < args.workers; i++)
                 {
                     if(pids[i] == exited_pid)
                     {
@@ -269,6 +275,7 @@ int main(int argc, char *argv[], char *envp[])
             }
         }
 
+        free(pids);
         exit(EXIT_SUCCESS);
     }
     else
