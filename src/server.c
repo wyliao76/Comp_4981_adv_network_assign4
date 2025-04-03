@@ -1,8 +1,10 @@
 #include "args.h"
 #include "fsm.h"
+#include "http.h"
 #include "io.h"
 #include "networking.h"
 #include "utils.h"
+#include <dlfcn.h>
 #include <errno.h>
 #include <poll.h>
 #include <stdio.h>
@@ -13,68 +15,64 @@
 #define BACKLOG 5
 #define MAX_CLIENTS 3
 #define MAX_FDS (MAX_CLIENTS + 2)
-#define NUM_WORKERS 1
-#define RAW_SIZE 8192
+#define NUM_WORKERS 3
 
-typedef struct request_t
+// static void worker_process(void *args)
+// {
+//     request_t *request = (request_t *)args;
+
+//     const char *http_response = "HTTP/1.0 200 OK\r\n"
+//                                 "Content-Type: text/plain\r\n"
+//                                 "Content-Length: 13\r\n"
+//                                 "Connection: close\r\n"
+//                                 "\r\n"
+//                                 "Hello, World!";
+
+//     while(running)
+//     {
+//         ssize_t result;
+
+//         request->client_fd = recv_fd(*request->sockfd, &request->fd_num);
+//         if(request->client_fd <= 0)
+//         {
+//             perror("recv_fd error");
+//         }
+//         printf("Worker %d (PID: %d) started\n", request->worker_id, getpid());
+
+//         PRINT_VERBOSE("%s fd: %d num: %d\n", "receiving fd from monitor...", request->client_fd, request->fd_num);
+
+//         result = setSocketNonBlocking(request->client_fd, &request->err);
+//         if(result == -1)
+//         {
+//             free(request->raw);
+//             exit(EXIT_FAILURE);
+//         }
+
+//         read_fully(request->client_fd, request->raw, RAW_SIZE, &request->err);
+
+//         PRINT_VERBOSE("Worker %d is handling tasks...\n", request->worker_id);
+//         write_fully(request->client_fd, http_response, (ssize_t)strlen(http_response), &request->err);
+
+//         close(request->client_fd);
+
+//         send_number(*request->sockfd, request->fd_num);
+//         PRINT_VERBOSE("%s\n", "fd wrote back to server");
+//         PRINT_VERBOSE("%s %d\n", "close fd worker side", request->client_fd);
+
+//         memset(request->raw, 0, RAW_SIZE);
+//     }
+// }
+
+static void worker_process(int sockfd)
 {
-    char *raw;
-    int   client_fd;
-    int   fd_num;
-    int  *sockfd;
-    int   worker_id;
-    int   err;
-} request_t;
+    request_t      request;
+    fsm_state_func perform;
+    fsm_state_t    from_id;
+    fsm_state_t    to_id;
+    const void    *handle;
 
-static void worker_process(void *args)
-{
-    request_t *request = (request_t *)args;
-
-    const char *http_response = "HTTP/1.0 200 OK\r\n"
-                                "Content-Type: text/plain\r\n"
-                                "Content-Length: 13\r\n"
-                                "Connection: close\r\n"
-                                "\r\n"
-                                "Hello, World!";
-
-    while(running)
-    {
-        ssize_t result;
-
-        request->client_fd = recv_fd(*request->sockfd, &request->fd_num);
-        if(request->client_fd <= 0)
-        {
-            perror("recv_fd error");
-        }
-        printf("Worker %d (PID: %d) started\n", request->worker_id, getpid());
-
-        PRINT_VERBOSE("%s fd: %d num: %d\n", "receiving fd from monitor...", request->client_fd, request->fd_num);
-
-        result = setSocketNonBlocking(request->client_fd, &request->err);
-        if(result == -1)
-        {
-            free(request->raw);
-            exit(EXIT_FAILURE);
-        }
-
-        read_fully(request->client_fd, request->raw, RAW_SIZE, &request->err);
-
-        PRINT_VERBOSE("Worker %d is handling tasks...\n", request->worker_id);
-        write_fully(request->client_fd, http_response, (ssize_t)strlen(http_response), &request->err);
-
-        close(request->client_fd);
-
-        send_number(*request->sockfd, request->fd_num);
-        PRINT_VERBOSE("%s\n", "fd wrote back to server");
-        PRINT_VERBOSE("%s %d\n", "close fd worker side", request->client_fd);
-
-        memset(request->raw, 0, RAW_SIZE);
-    }
-}
-
-static void worker_logic(int sockfd)
-{
-    request_t request;
+    from_id = START;
+    to_id   = READ_REQUEST;
 
     memset(&request, 0, sizeof(request_t));
 
@@ -89,7 +87,31 @@ static void worker_logic(int sockfd)
 
     PRINT_VERBOSE("%s\n", "workers spawned");
 
-    worker_process(&request);
+    handle = dlopen("./http.so", RTLD_LAZY);
+    if(!handle)
+    {
+        printf("dlopen failed: %s\n", dlerror());
+        // goto cleanup;
+    }
+
+    while(running)
+    {
+        do
+        {
+            perform = fsm_transition(from_id, to_id, transitions);
+            if(perform == NULL)
+            {
+                printf("illegal state %d, %d \n", from_id, to_id);
+                goto cleanup;
+            }
+            // printf("from_id %d\n", from_id);
+            from_id = to_id;
+            to_id   = perform(&request);
+            printf("to_id %d\n", to_id);
+        } while(to_id != END);
+    }
+
+cleanup:
     free(request.raw);
 }
 
@@ -156,10 +178,10 @@ static fsm_state_t event_loop(void *args)
             }
             if(!added)
             {
-                char too_many[] = "Too many clients, rejecting connection\n";
+                const char too_many[] = "Too many clients, rejecting connection\n";
 
                 printf("%s", too_many);
-                write_fully(client_fd, &too_many, (ssize_t)strlen(too_many), &server_args->err);
+                // write_fully(client_fd, &too_many, (ssize_t)strlen(too_many), &server_args->err);
 
                 close(client_fd);
                 continue;
@@ -277,7 +299,7 @@ int main(int argc, char *argv[], char *envp[])
             }
             else if(pids[i] == 0)
             {
-                worker_logic(args.sockfd[0]);
+                worker_process(args.sockfd[0]);
             }
         }
 
@@ -304,7 +326,7 @@ int main(int argc, char *argv[], char *envp[])
                         }
                         else if(pids[i] == 0)
                         {
-                            worker_logic(args.sockfd[0]);
+                            worker_process(args.sockfd[0]);
                         }
                         break;
                     }

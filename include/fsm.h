@@ -8,12 +8,6 @@
 typedef enum
 {
     START,
-    REQUEST_HANDLER,
-    HEADER_HANDLER,
-    BODY_HANDLER,
-    PROCESS_HANDLER,
-    RESPONSE_HANDLER,
-    ERROR_HANDLER,
     END
 } fsm_state;
 
@@ -28,6 +22,6 @@ struct fsm_transition
     fsm_state_func perform;
 };
 
-fsm_state_func fsm_transition(fsm_state_t from_id, fsm_state_t to_id, const struct fsm_transition transitions[], size_t transitions_size);
+fsm_state_func fsm_transition(fsm_state_t from_id, fsm_state_t to_id, const struct fsm_transition transitions[]);
 
 #endif    // FSM_H

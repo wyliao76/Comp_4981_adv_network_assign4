@@ -281,7 +281,6 @@ int recv_fd(int socket, int *fd_num)
     return -1;
 }
 
-// fix later
 ssize_t send_number(int socket, int fd_num)
 {
     ssize_t sent = send(socket, &fd_num, sizeof(fd_num), 0);
@@ -293,7 +292,6 @@ ssize_t send_number(int socket, int fd_num)
     return 0;
 }
 
-// fix later
 ssize_t recv_number(int socket, int *fd_num)
 {
     ssize_t received = recv(socket, fd_num, sizeof(*fd_num), 0);
