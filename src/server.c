@@ -15,6 +15,7 @@
 #define MAX_FDS (MAX_CLIENTS + 1)
 #define NUM_WORKERS 3
 #define RAW_SIZE 8192
+#define YO 100
 
 typedef struct request_t
 {
@@ -27,17 +28,30 @@ typedef struct request_t
 
 static void worker_process(void *args)
 {
-    const request_t *request = (request_t *)args;
-    printf("Worker %d (PID: %d) started\n", request->worker_id, getpid());
+    request_t *request = (request_t *)args;
 
-    // Worker loop: Replace this with actual worker logic
-    while(1)
-    {
-        printf("Worker %d is handling tasks...\n", request->worker_id);
-        sleep(3);    // Simulate work
-        send_fd(*request->sockfd, request->info);
-        break;
-    }
+    const char *http_response = "HTTP/1.0 200 OK\r\n"
+                                "Content-Type: text/plain\r\n"
+                                "Content-Length: 13\r\n"
+                                "Connection: close\r\n"
+                                "\r\n"
+                                "Hello, World!";
+
+    PRINT_VERBOSE("Worker %d (PID: %d) started\n", request->worker_id, getpid());
+
+    // read_fully(request->info->fd, request->raw, RAW_SIZE, &request->err);
+
+    write(STDOUT_FILENO, request->raw, YO);
+    printf("\n");
+
+    PRINT_VERBOSE("Worker %d is handling tasks...\n", request->worker_id);
+    write_fully(request->info->fd, http_response, (ssize_t)strlen(http_response), &request->err);
+    send_number(*request->sockfd, request->info->fd_num);
+    PRINT_VERBOSE("%s\n", "fd wrote back to server");
+    PRINT_VERBOSE("%s %d\n", "close fd worker side", request->info->fd);
+
+    close(request->info->fd);
+    memset(request->raw, 0, RAW_SIZE);
 }
 
 static fsm_state_t event_loop(void *args);
@@ -60,6 +74,8 @@ static fsm_state_t event_loop(void *args)
     for(int i = 2; i < MAX_FDS; i++)
     {
         fds[i].fd = -1;
+        // fds[i].events  = 0;
+        // fds[i].revents = 0;
     }
 
     while(running)
@@ -69,6 +85,7 @@ static fsm_state_t event_loop(void *args)
         // PRINT_VERBOSE("%s\n", "polling...");
 
         retval = poll(fds, MAX_FDS, -1);
+        PRINT_DEBUG("retval: %zd\n", retval);
         if(retval == -1)
         {
             if(errno == EINTR)
@@ -81,6 +98,7 @@ static fsm_state_t event_loop(void *args)
         if(fds[0].revents & POLLIN)
         {
             client_fd = accept(*server_args->fd, NULL, 0);
+            PRINT_DEBUG("client_fd: %d\n", client_fd);
             if(client_fd < 0)
             {
                 if(errno == EINTR)
@@ -93,13 +111,14 @@ static fsm_state_t event_loop(void *args)
 
             // Add new client to poll list
             added = 0;
-            for(int i = 1; i < MAX_FDS; i++)
+            for(int i = 2; i < MAX_FDS; i++)
             {
                 if(fds[i].fd == -1)
                 {
-                    fds[i].fd     = client_fd;
-                    fds[i].events = POLLIN;
-                    added         = 1;
+                    fds[i].fd      = client_fd;
+                    fds[i].events  = POLLIN;
+                    fds[i].revents = 0;
+                    added          = 1;
                     break;
                 }
             }
@@ -114,33 +133,24 @@ static fsm_state_t event_loop(void *args)
                 continue;
             }
         }
-        if(fds[1].revents & POLLIN)
-        {
-            fd_info_t info;
-            if(recv_fd(fds[1].fd, &info) < 0)
-            {
-                perror("recv_fd error");
-            }
-            PRINT_VERBOSE("%s fd: %d num: %d\n", "receiving fd from worker...", info.fd, info.fd_num);
-            close(fds[info.fd_num].fd);
-            fds[info.fd_num].fd     = -1;
-            fds[info.fd_num].events = POLLIN;
-        }
         // Check existing clients for data
         for(int i = 2; i < MAX_FDS; i++)
         {
             if(fds[i].fd != -1)
             {
+                printf("%d %d %d\n", i, fds[i].fd, fds[i].revents);
                 if(fds[i].revents & POLLIN)
                 {
                     fd_info_t info;
 
                     info.fd     = fds[i].fd;
-                    info.fd_num = i;
+                    info.fd_num = fds[i].fd;
                     PRINT_VERBOSE("%s fd: %d num: %d\n", "Dispatching to workers...", fds[i].fd, fds[i].fd);
 
-                    fds[i].revents = 0;
+                    fds[i].events = 0;
                     send_fd(server_args->sockfd[0], &info);
+                    fds[i].revents = 0;
+                    continue;
                 }
 
                 if(fds[i].revents & (POLLHUP | POLLERR))
@@ -154,6 +164,29 @@ static fsm_state_t event_loop(void *args)
                 }
             }
         }
+        if(fds[1].revents & POLLIN)
+        {
+            int fd_num;
+
+            if(recv_number(fds[1].fd, &fd_num) < 0)
+            {
+                perror("recv_num error");
+            }
+
+            PRINT_VERBOSE("%s fd: %d \n", "receiving fd from worker...", fd_num);
+
+            for(int i = 2; i < MAX_CLIENTS; i++)
+            {
+                if(fds[i].fd == fd_num)
+                {
+                    PRINT_VERBOSE("%s fd: %d \n", "closing fd server side...", fds[i].fd);
+                    close(fds[i].fd);
+                    fds[i].fd     = -1;
+                    fds[i].events = 0;
+                    break;
+                }
+            }
+        }
     }
     return END;
 }
@@ -162,9 +195,8 @@ int main(int argc, char *argv[], char *envp[])
 {
     int    retval;
     args_t args;
-    // int    sockfd[2];
-    int   server_fd;
-    pid_t pid;
+    int    server_fd;
+    pid_t  pid;
 
     while(*envp)
     {
@@ -210,12 +242,16 @@ int main(int argc, char *argv[], char *envp[])
 
         PRINT_VERBOSE("%s\n", "monitor");
 
+        memset(&request, 0, sizeof(request_t));
+        memset(&info, 0, sizeof(fd_info_t));
+
         request.raw = (char *)malloc(RAW_SIZE);
         if(!request.raw)
         {
             perror("failed to malloc");
             exit(EXIT_FAILURE);
         }
+        memset(request.raw, 0, RAW_SIZE);
         request.sockfd = &args.sockfd[0];
         request.info   = &info;
 
@@ -231,23 +267,23 @@ int main(int argc, char *argv[], char *envp[])
             }
             else if(pids[i] == 0)
             {
-                // int err;
                 PRINT_VERBOSE("%s\n", "workers spawned");
-                if(recv_fd(args.sockfd[1], &info) < 0)
+                while(1)
                 {
-                    perror("recv_fd error");
+                    recv_fd(args.sockfd[1], &info);
+
+                    PRINT_VERBOSE("%s fd: %d num: %d\n", "receiving fd from monitor...", info.fd, info.fd_num);
+
+                    request.worker_id = i;
+
+                    // if(setSocketNonBlocking(info.fd, &err) < 0)
+                    // {
+                    //     perror("set non-blocking failed");
+                    // }
+
+                    worker_process(&request);
                 }
-                PRINT_VERBOSE("%s fd: %d num: %d\n", "receiving fd from monitor...", info.fd, info.fd_num);
-
-                request.worker_id = i;
-
-                // if(setSocketNonBlocking(info.fd, &err) < 0)
-                // {
-                //     perror("set non-blocking failed");
-                // }
-
-                worker_process(&request);
-                exit(EXIT_SUCCESS);    // Prevent workers from continuing the parent logic
+                // exit(EXIT_SUCCESS);    // Prevent workers from continuing the parent logic
             }
         }
 
@@ -275,10 +311,7 @@ int main(int argc, char *argv[], char *envp[])
                         else if(pids[i] == 0)
                         {
                             PRINT_VERBOSE("%s\n", "workers spawned");
-                            if(recv_fd(args.sockfd[1], &info) < 0)
-                            {
-                                perror("recv_fd error");
-                            }
+                            recv_fd(args.sockfd[1], &info);
                             PRINT_VERBOSE("%s fd: %d num: %d\n", "receiving fd from monitor...", info.fd, info.fd_num);
 
                             request.worker_id = i;

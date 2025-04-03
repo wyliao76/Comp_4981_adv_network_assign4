@@ -247,7 +247,7 @@ void send_fd(int socket, fd_info_t *info)
     }
 }
 
-ssize_t recv_fd(int socket, fd_info_t *info)
+void recv_fd(int socket, fd_info_t *info)
 {
     struct msghdr   msg = {0};
     struct iovec    io;
@@ -272,8 +272,29 @@ ssize_t recv_fd(int socket, fd_info_t *info)
     if(cmsg && cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_RIGHTS)
     {
         memcpy(&info->fd, CMSG_DATA(cmsg), sizeof(int));
-        return 0;
     }
+}
 
-    return -1;
+// fix later
+ssize_t send_number(int socket, int fd_num)
+{
+    ssize_t sent = send(socket, &fd_num, sizeof(fd_num), 0);
+    if(sent <= 0)
+    {
+        perror("send");
+        return -1;
+    }
+    return 0;
+}
+
+// fix later
+ssize_t recv_number(int socket, int *fd_num)
+{
+    ssize_t received = recv(socket, fd_num, sizeof(*fd_num), 0);
+    if(received <= 0)
+    {
+        perror("recv");
+        return -1;
+    }
+    return 0;
 }
