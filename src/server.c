@@ -13,16 +13,14 @@
 #define BACKLOG 5
 #define MAX_CLIENTS 64
 #define MAX_FDS (MAX_CLIENTS + 1)
-#define NUM_WORKERS 3
+#define NUM_WORKERS 2
 #define RAW_SIZE 8192
-
-// #define YO 100
 
 typedef struct request_t
 {
     char      *raw;
     fd_info_t *info;
-    int       *sockfd;
+    int        sockfd;
     int        worker_id;
     int        err;
 } request_t;
@@ -47,16 +45,15 @@ static void worker_process(void *args)
 
     read_fully(request->info->fd, request->raw, RAW_SIZE, &request->err);
 
-    // write(STDOUT_FILENO, request->raw, YO);
-    // printf("\n");
-
     PRINT_VERBOSE("Worker %d is handling tasks...\n", request->worker_id);
     write_fully(request->info->fd, http_response, (ssize_t)strlen(http_response), &request->err);
-    send_number(*request->sockfd, request->info->fd_num);
+
+    close(request->info->fd);
+
+    send_number(request->sockfd, request->info->fd_num);
     PRINT_VERBOSE("%s\n", "fd wrote back to server");
     PRINT_VERBOSE("%s %d\n", "close fd worker side", request->info->fd);
 
-    close(request->info->fd);
     memset(request->raw, 0, RAW_SIZE);
 }
 
@@ -273,7 +270,7 @@ int main(int argc, char *argv[], char *envp[])
                     exit(EXIT_FAILURE);
                 }
                 memset(request.raw, 0, RAW_SIZE);
-                request.sockfd = &args.sockfd[0];
+                request.sockfd = args.sockfd[0];
                 request.info   = &info;
                 while(running)
                 {
@@ -326,7 +323,7 @@ int main(int argc, char *argv[], char *envp[])
                                 exit(EXIT_FAILURE);
                             }
                             memset(request.raw, 0, RAW_SIZE);
-                            request.sockfd = &args.sockfd[0];
+                            request.sockfd = args.sockfd[0];
                             request.info   = &info;
 
                             while(running)
