@@ -16,77 +16,38 @@
 #define MAX_FDS (MAX_CLIENTS + 2)
 #define NUM_WORKERS 3
 
-// static void worker_process(void *args)
-// {
-//     request_t *request = (request_t *)args;
-
-//     const char *http_response = "HTTP/1.0 200 OK\r\n"
-//                                 "Content-Type: text/plain\r\n"
-//                                 "Content-Length: 13\r\n"
-//                                 "Connection: close\r\n"
-//                                 "\r\n"
-//                                 "Hello, World!";
-
-//     while(running)
-//     {
-//         ssize_t result;
-
-//         request->client_fd = recv_fd(*request->sockfd, &request->fd_num);
-//         if(request->client_fd <= 0)
-//         {
-//             perror("recv_fd error");
-//         }
-//         printf("Worker %d (PID: %d) started\n", request->worker_id, getpid());
-
-//         PRINT_VERBOSE("%s fd: %d num: %d\n", "receiving fd from monitor...", request->client_fd, request->fd_num);
-
-//         result = setSocketNonBlocking(request->client_fd, &request->err);
-//         if(result == -1)
-//         {
-//             free(request->raw);
-//             exit(EXIT_FAILURE);
-//         }
-
-//         read_fully(request->client_fd, request->raw, RAW_SIZE, &request->err);
-
-//         PRINT_VERBOSE("Worker %d is handling tasks...\n", request->worker_id);
-//         write_fully(request->client_fd, http_response, (ssize_t)strlen(http_response), &request->err);
-
-//         close(request->client_fd);
-
-//         send_number(*request->sockfd, request->fd_num);
-//         PRINT_VERBOSE("%s\n", "fd wrote back to server");
-//         PRINT_VERBOSE("%s %d\n", "close fd worker side", request->client_fd);
-
-//         memset(request->raw, 0, RAW_SIZE);
-//     }
-// }
-
 static void worker_process(int sockfd)
 {
-    void *handle;
-    void (*func)(int);
-
-    handle = dlopen("./http.so", RTLD_LAZY);
-    if(!handle)
+    while(running)
     {
-        printf("dlopen failed: %s\n", dlerror());
-        exit(EXIT_FAILURE);
-    }
+        void *handle;
+        void (*func)(int);
+
+        PRINT_DEBUG("%s\n", "loading lib...");
+        handle = dlopen("./http.so", RTLD_LAZY);
+        if(!handle)
+        {
+            printf("dlopen failed: %s\n", dlerror());
+            exit(EXIT_FAILURE);
+        }
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wpedantic"
 #pragma GCC diagnostic ignored "-Wstrict-prototypes"
-    func = (void (*)(int))dlsym(handle, "fsm_run");
+        func = (void (*)(int))dlsym(handle, "fsm_run");
 #pragma GCC diagnostic pop
-    if(!func)
-    {
-        fprintf(stderr, "dlsym failed: %s\n", dlerror());
+        if(!func)
+        {
+            fprintf(stderr, "dlsym failed: %s\n", dlerror());
+            dlclose(handle);
+            exit(EXIT_FAILURE);
+        }
+
+        func(sockfd);
+
+        PRINT_DEBUG("%s\n", "unloading lib...");
         dlclose(handle);
-        exit(EXIT_FAILURE);
     }
-    func(sockfd);
-    dlclose(handle);
 }
 
 static fsm_state_t event_loop(void *args);

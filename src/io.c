@@ -2,8 +2,8 @@
 #include "utils.h"
 #include <errno.h>
 #include <fcntl.h>
-#include <p101_c/p101_stdio.h>
-#include <p101_c/p101_stdlib.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <time.h>
@@ -11,19 +11,6 @@
 
 #define TIMEOUT 5000
 #define MILLI_SEC 1000
-
-static long header_end(char *buf)
-{
-    const char *pos = strstr(buf, "\r\n\r\n");
-
-    if(pos)
-    {
-        printf("Found at position: %td\n", pos - buf);
-        return pos - buf;
-    }
-    printf("Not found\n");
-    return -1;
-}
 
 ssize_t read_fully(int fd, char *buf, size_t size, int *err)
 {
@@ -52,10 +39,6 @@ ssize_t read_fully(int fd, char *buf, size_t size, int *err)
             return -1;
         }
         bytes_read += (size_t)result;
-        if(header_end(buf) > 0)
-        {
-            break;
-        }
     }
     return (ssize_t)bytes_read;
 }

@@ -1,4 +1,5 @@
 #include "http.h"
+#include "io.h"
 #include "networking.h"
 #include "utils.h"
 #include <errno.h>
@@ -42,7 +43,6 @@ const struct fsm_transition transitions[] = {
     {PROCESS_REQUEST,  RESPONSE_HANDLER, response_handler},
     {RESPONSE_HANDLER, END,              NULL            },
     {ERROR_HANDLER,    END,              NULL            },
-    {-1,               -1,               NULL            },
 };
 
 static long header_end(char *buf)
@@ -81,8 +81,6 @@ void fsm_run(int sockfd)
 
     printf("%s\n", "workers spawned");
 
-    // while(running)
-    // {
     do
     {
         perform = fsm_transition(from_id, to_id, transitions);
@@ -96,7 +94,7 @@ void fsm_run(int sockfd)
         to_id   = perform(&request);
         // printf("to_id %d\n", to_id);
     } while(to_id != END);
-    // }
+    printf("done\n");
 
 cleanup:
     free(request.raw);
@@ -197,9 +195,29 @@ fsm_state_t response_handler(void *args)
 {
     request_t *request = (request_t *)args;
 
+    const char *http_response = "HTTP/1.0 200 OK\r\n"
+                                "Content-Type: text/plain\r\n"
+                                "Content-Length: 13\r\n"
+                                "Connection: close\r\n"
+                                "\r\n"
+                                "Hello, World!";
+
     request->status = OK;
 
     printf("%s\n", "in response_handler");
+
+    read_fully(request->client_fd, request->raw, RAW_SIZE, &request->err);
+
+    printf("Worker %d is handling tasks...\n", request->worker_id);
+    write_fully(request->client_fd, http_response, (ssize_t)strlen(http_response), &request->err);
+
+    close(request->client_fd);
+
+    send_number(*request->sockfd, request->fd_num);
+    printf("%s\n", "fd wrote back to server");
+    printf("%s %d\n", "close fd worker side", request->client_fd);
+
+    memset(request->raw, 0, RAW_SIZE);
 
     return END;
 }
