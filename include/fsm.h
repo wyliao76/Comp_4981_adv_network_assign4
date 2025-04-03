@@ -8,7 +8,7 @@
 typedef enum
 {
     START,
-    END
+    END,
 } fsm_state;
 
 typedef int fsm_state_t;

@@ -58,6 +58,50 @@ static long header_end(char *buf)
     return -1;
 }
 
+void fsm_run(int sockfd)
+{
+    request_t      request;
+    fsm_state_func perform;
+    fsm_state_t    from_id;
+    fsm_state_t    to_id;
+
+    from_id = START;
+    to_id   = READ_REQUEST;
+
+    memset(&request, 0, sizeof(request_t));
+
+    request.raw = (char *)malloc(RAW_SIZE);
+    if(!request.raw)
+    {
+        perror("failed to malloc");
+        exit(EXIT_FAILURE);
+    }
+    memset(request.raw, 0, RAW_SIZE);
+    request.sockfd = &sockfd;
+
+    printf("%s\n", "workers spawned");
+
+    // while(running)
+    // {
+    do
+    {
+        perform = fsm_transition(from_id, to_id, transitions);
+        if(perform == NULL)
+        {
+            printf("illegal state %d, %d \n", from_id, to_id);
+            goto cleanup;
+        }
+        // printf("from_id %d\n", from_id);
+        from_id = to_id;
+        to_id   = perform(&request);
+        // printf("to_id %d\n", to_id);
+    } while(to_id != END);
+    // }
+
+cleanup:
+    free(request.raw);
+}
+
 fsm_state_t read_request(void *args)
 {
     request_t *request    = (request_t *)args;

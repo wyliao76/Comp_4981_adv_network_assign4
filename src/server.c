@@ -1,6 +1,5 @@
 #include "args.h"
 #include "fsm.h"
-#include "http.h"
 #include "io.h"
 #include "networking.h"
 #include "utils.h"
@@ -65,54 +64,29 @@
 
 static void worker_process(int sockfd)
 {
-    request_t      request;
-    fsm_state_func perform;
-    fsm_state_t    from_id;
-    fsm_state_t    to_id;
-    const void    *handle;
-
-    from_id = START;
-    to_id   = READ_REQUEST;
-
-    memset(&request, 0, sizeof(request_t));
-
-    request.raw = (char *)malloc(RAW_SIZE);
-    if(!request.raw)
-    {
-        perror("failed to malloc");
-        exit(EXIT_FAILURE);
-    }
-    memset(request.raw, 0, RAW_SIZE);
-    request.sockfd = &sockfd;
-
-    PRINT_VERBOSE("%s\n", "workers spawned");
+    void *handle;
+    void (*func)(int);
 
     handle = dlopen("./http.so", RTLD_LAZY);
     if(!handle)
     {
         printf("dlopen failed: %s\n", dlerror());
-        // goto cleanup;
+        exit(EXIT_FAILURE);
     }
 
-    while(running)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpedantic"
+#pragma GCC diagnostic ignored "-Wstrict-prototypes"
+    func = (void (*)(int))dlsym(handle, "fsm_run");
+#pragma GCC diagnostic pop
+    if(!func)
     {
-        do
-        {
-            perform = fsm_transition(from_id, to_id, transitions);
-            if(perform == NULL)
-            {
-                printf("illegal state %d, %d \n", from_id, to_id);
-                goto cleanup;
-            }
-            // printf("from_id %d\n", from_id);
-            from_id = to_id;
-            to_id   = perform(&request);
-            printf("to_id %d\n", to_id);
-        } while(to_id != END);
+        fprintf(stderr, "dlsym failed: %s\n", dlerror());
+        dlclose(handle);
+        exit(EXIT_FAILURE);
     }
-
-cleanup:
-    free(request.raw);
+    func(sockfd);
+    dlclose(handle);
 }
 
 static fsm_state_t event_loop(void *args);

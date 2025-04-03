@@ -44,6 +44,7 @@ typedef struct request_t
 
 extern const struct fsm_transition transitions[];
 
+void        fsm_run(int sockfd);
 fsm_state_t read_request(void *args);
 fsm_state_t parse_request(void *args);
 fsm_state_t process_request(void *args);
