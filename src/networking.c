@@ -131,11 +131,11 @@ static int setup_tcp_server(const struct sockaddr_storage *addr, socklen_t addr_
         goto done;
     }
 
-    result = setSocketNonBlocking(fd, err);
-    if(result == -1)
-    {
-        goto done;
-    }
+    // result = setSocketNonBlocking(fd, err);
+    // if(result == -1)
+    // {
+    //     goto done;
+    // }
 
     result = setSockReuse(fd, err);
 

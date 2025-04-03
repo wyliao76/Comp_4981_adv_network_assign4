@@ -15,7 +15,8 @@
 #define MAX_FDS (MAX_CLIENTS + 1)
 #define NUM_WORKERS 3
 #define RAW_SIZE 8192
-#define YO 100
+
+// #define YO 100
 
 typedef struct request_t
 {
@@ -39,10 +40,15 @@ static void worker_process(void *args)
 
     PRINT_VERBOSE("Worker %d (PID: %d) started\n", request->worker_id, getpid());
 
-    // read_fully(request->info->fd, request->raw, RAW_SIZE, &request->err);
+    if(setSocketNonBlocking(request->info->fd, &request->err) < 0)
+    {
+        perror("set non-blocking failed");
+    }
 
-    write(STDOUT_FILENO, request->raw, YO);
-    printf("\n");
+    read_fully(request->info->fd, request->raw, RAW_SIZE, &request->err);
+
+    // write(STDOUT_FILENO, request->raw, YO);
+    // printf("\n");
 
     PRINT_VERBOSE("Worker %d is handling tasks...\n", request->worker_id);
     write_fully(request->info->fd, http_response, (ssize_t)strlen(http_response), &request->err);
@@ -73,8 +79,8 @@ static fsm_state_t event_loop(void *args)
 
     for(int i = 2; i < MAX_FDS; i++)
     {
-        fds[i].fd = -1;
-        // fds[i].events  = 0;
+        fds[i].fd     = -1;
+        fds[i].events = 0;
         // fds[i].revents = 0;
     }
 
@@ -236,24 +242,9 @@ int main(int argc, char *argv[], char *envp[])
     // monitor
     if(pid == 0)
     {
-        fd_info_t info;
-        request_t request;
-        pid_t     pids[NUM_WORKERS];
+        pid_t pids[NUM_WORKERS];
 
         PRINT_VERBOSE("%s\n", "monitor");
-
-        memset(&request, 0, sizeof(request_t));
-        memset(&info, 0, sizeof(fd_info_t));
-
-        request.raw = (char *)malloc(RAW_SIZE);
-        if(!request.raw)
-        {
-            perror("failed to malloc");
-            exit(EXIT_FAILURE);
-        }
-        memset(request.raw, 0, RAW_SIZE);
-        request.sockfd = &args.sockfd[0];
-        request.info   = &info;
 
         PRINT_VERBOSE("%s\n", "creating workers...");
         // workers
@@ -267,8 +258,24 @@ int main(int argc, char *argv[], char *envp[])
             }
             else if(pids[i] == 0)
             {
+                fd_info_t info;
+                request_t request;
+
                 PRINT_VERBOSE("%s\n", "workers spawned");
-                while(1)
+
+                memset(&request, 0, sizeof(request_t));
+                memset(&info, 0, sizeof(fd_info_t));
+
+                request.raw = (char *)malloc(RAW_SIZE);
+                if(!request.raw)
+                {
+                    perror("failed to malloc");
+                    exit(EXIT_FAILURE);
+                }
+                memset(request.raw, 0, RAW_SIZE);
+                request.sockfd = &args.sockfd[0];
+                request.info   = &info;
+                while(running)
                 {
                     recv_fd(args.sockfd[1], &info);
 
@@ -276,14 +283,8 @@ int main(int argc, char *argv[], char *envp[])
 
                     request.worker_id = i;
 
-                    // if(setSocketNonBlocking(info.fd, &err) < 0)
-                    // {
-                    //     perror("set non-blocking failed");
-                    // }
-
                     worker_process(&request);
                 }
-                // exit(EXIT_SUCCESS);    // Prevent workers from continuing the parent logic
             }
         }
 
@@ -310,21 +311,40 @@ int main(int argc, char *argv[], char *envp[])
                         }
                         else if(pids[i] == 0)
                         {
+                            fd_info_t info;
+                            request_t request;
+
                             PRINT_VERBOSE("%s\n", "workers spawned");
-                            recv_fd(args.sockfd[1], &info);
-                            PRINT_VERBOSE("%s fd: %d num: %d\n", "receiving fd from monitor...", info.fd, info.fd_num);
 
-                            request.worker_id = i;
+                            memset(&request, 0, sizeof(request_t));
+                            memset(&info, 0, sizeof(fd_info_t));
 
-                            worker_process(&request);
-                            exit(EXIT_SUCCESS);
+                            request.raw = (char *)malloc(RAW_SIZE);
+                            if(!request.raw)
+                            {
+                                perror("failed to malloc");
+                                exit(EXIT_FAILURE);
+                            }
+                            memset(request.raw, 0, RAW_SIZE);
+                            request.sockfd = &args.sockfd[0];
+                            request.info   = &info;
+
+                            while(running)
+                            {
+                                recv_fd(args.sockfd[1], &info);
+
+                                PRINT_VERBOSE("%s fd: %d num: %d\n", "receiving fd from monitor...", info.fd, info.fd_num);
+
+                                request.worker_id = i;
+
+                                worker_process(&request);
+                            }
                         }
                         break;
                     }
                 }
             }
         }
-
         exit(EXIT_SUCCESS);
     }
     else
