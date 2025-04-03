@@ -11,18 +11,19 @@
 #include <sys/wait.h>
 
 #define BACKLOG 5
-#define MAX_CLIENTS 64
-#define MAX_FDS (MAX_CLIENTS + 1)
+#define MAX_CLIENTS 3
+#define MAX_FDS (MAX_CLIENTS + 2)
 #define NUM_WORKERS 2
 #define RAW_SIZE 8192
 
 typedef struct request_t
 {
-    char      *raw;
-    fd_info_t *info;
-    int        sockfd;
-    int        worker_id;
-    int        err;
+    char *raw;
+    int   client_fd;
+    int   fd_num;
+    int   sockfd;
+    int   worker_id;
+    int   err;
 } request_t;
 
 static void worker_process(void *args)
@@ -38,21 +39,21 @@ static void worker_process(void *args)
 
     PRINT_VERBOSE("Worker %d (PID: %d) started\n", request->worker_id, getpid());
 
-    if(setSocketNonBlocking(request->info->fd, &request->err) < 0)
+    if(setSocketNonBlocking(request->client_fd, &request->err) < 0)
     {
         perror("set non-blocking failed");
     }
 
-    read_fully(request->info->fd, request->raw, RAW_SIZE, &request->err);
+    read_fully(request->client_fd, request->raw, RAW_SIZE, &request->err);
 
     PRINT_VERBOSE("Worker %d is handling tasks...\n", request->worker_id);
-    write_fully(request->info->fd, http_response, (ssize_t)strlen(http_response), &request->err);
+    write_fully(request->client_fd, http_response, (ssize_t)strlen(http_response), &request->err);
 
-    close(request->info->fd);
+    close(request->client_fd);
 
-    send_number(request->sockfd, request->info->fd_num);
+    send_number(request->sockfd, request->fd_num);
     PRINT_VERBOSE("%s\n", "fd wrote back to server");
-    PRINT_VERBOSE("%s %d\n", "close fd worker side", request->info->fd);
+    PRINT_VERBOSE("%s %d\n", "close fd worker side", request->client_fd);
 
     memset(request->raw, 0, RAW_SIZE);
 }
@@ -136,37 +137,6 @@ static fsm_state_t event_loop(void *args)
                 continue;
             }
         }
-        // Check existing clients for data
-        for(int i = 2; i < MAX_FDS; i++)
-        {
-            if(fds[i].fd != -1)
-            {
-                printf("%d %d %d\n", i, fds[i].fd, fds[i].revents);
-                if(fds[i].revents & POLLIN)
-                {
-                    fd_info_t info;
-
-                    info.fd     = fds[i].fd;
-                    info.fd_num = fds[i].fd;
-                    PRINT_VERBOSE("%s fd: %d num: %d\n", "Dispatching to workers...", fds[i].fd, fds[i].fd);
-
-                    fds[i].events = 0;
-                    send_fd(server_args->sockfd[0], &info);
-                    fds[i].revents = 0;
-                    continue;
-                }
-
-                if(fds[i].revents & (POLLHUP | POLLERR))
-                {
-                    // Client disconnected or error, close and clean up
-                    printf("oops...\n");
-                    close(fds[i].fd);
-                    fds[i].fd     = -1;
-                    fds[i].events = 0;
-                    continue;
-                }
-            }
-        }
         if(fds[1].revents & POLLIN)
         {
             int fd_num;
@@ -187,6 +157,33 @@ static fsm_state_t event_loop(void *args)
                     fds[i].fd     = -1;
                     fds[i].events = 0;
                     break;
+                }
+            }
+        }
+        // Check existing clients for data
+        for(int i = 2; i < MAX_FDS; i++)
+        {
+            if(fds[i].fd != -1)
+            {
+                printf("%d %d %d\n", i, fds[i].fd, fds[i].revents);
+                if(fds[i].revents & POLLIN)
+                {
+                    PRINT_VERBOSE("%s fd: %d num: %d\n", "Dispatching to workers...", fds[i].fd, fds[i].fd);
+
+                    fds[i].events = 0;
+                    send_fd(server_args->sockfd[0], fds[i].fd, fds[i].fd);
+                    fds[i].revents = 0;
+                    continue;
+                }
+
+                if(fds[i].revents & (POLLHUP | POLLERR))
+                {
+                    // Client disconnected or error, close and clean up
+                    printf("oops...\n");
+                    close(fds[i].fd);
+                    fds[i].fd     = -1;
+                    fds[i].events = 0;
+                    continue;
                 }
             }
         }
@@ -255,13 +252,11 @@ int main(int argc, char *argv[], char *envp[])
             }
             else if(pids[i] == 0)
             {
-                fd_info_t info;
                 request_t request;
 
                 PRINT_VERBOSE("%s\n", "workers spawned");
 
                 memset(&request, 0, sizeof(request_t));
-                memset(&info, 0, sizeof(fd_info_t));
 
                 request.raw = (char *)malloc(RAW_SIZE);
                 if(!request.raw)
@@ -271,17 +266,22 @@ int main(int argc, char *argv[], char *envp[])
                 }
                 memset(request.raw, 0, RAW_SIZE);
                 request.sockfd = args.sockfd[0];
-                request.info   = &info;
                 while(running)
                 {
-                    recv_fd(args.sockfd[1], &info);
+                    request.client_fd = recv_fd(args.sockfd[1], &request.fd_num);
+                    if(request.client_fd == -1)
+                    {
+                        continue;
+                    }
 
-                    PRINT_VERBOSE("%s fd: %d num: %d\n", "receiving fd from monitor...", info.fd, info.fd_num);
+                    PRINT_VERBOSE("%s fd: %d num: %d\n", "receiving fd from monitor...", request.client_fd, request.fd_num);
 
                     request.worker_id = i;
 
                     worker_process(&request);
                 }
+                memset(request.raw, 0, RAW_SIZE);
+                free(request.raw);
             }
         }
 
@@ -308,13 +308,11 @@ int main(int argc, char *argv[], char *envp[])
                         }
                         else if(pids[i] == 0)
                         {
-                            fd_info_t info;
                             request_t request;
 
                             PRINT_VERBOSE("%s\n", "workers spawned");
 
                             memset(&request, 0, sizeof(request_t));
-                            memset(&info, 0, sizeof(fd_info_t));
 
                             request.raw = (char *)malloc(RAW_SIZE);
                             if(!request.raw)
@@ -324,18 +322,23 @@ int main(int argc, char *argv[], char *envp[])
                             }
                             memset(request.raw, 0, RAW_SIZE);
                             request.sockfd = args.sockfd[0];
-                            request.info   = &info;
 
                             while(running)
                             {
-                                recv_fd(args.sockfd[1], &info);
+                                request.client_fd = recv_fd(args.sockfd[1], &request.fd_num);
+                                if(request.client_fd == -1)
+                                {
+                                    continue;
+                                }
 
-                                PRINT_VERBOSE("%s fd: %d num: %d\n", "receiving fd from monitor...", info.fd, info.fd_num);
+                                PRINT_VERBOSE("%s fd: %d num: %d\n", "receiving fd from monitor...", request.client_fd, request.fd_num);
 
                                 request.worker_id = i;
 
                                 worker_process(&request);
                             }
+                            memset(request.raw, 0, RAW_SIZE);
+                            free(request.raw);
                         }
                         break;
                     }

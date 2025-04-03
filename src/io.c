@@ -6,7 +6,7 @@
 #include <p101_c/p101_stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
-#include <sys/time.h>
+#include <time.h>
 #include <unistd.h>
 
 #define TIMEOUT 5000
