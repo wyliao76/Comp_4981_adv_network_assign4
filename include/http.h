@@ -6,8 +6,10 @@
 #include "fsm.h"
 #include <unistd.h>
 
+#define RAW_SIZE 8192
 #define BUFFER_SIZE 4096
 #define URL_SIZE 2048
+#define MIME_SIZE 32
 
 typedef enum
 {
@@ -36,7 +38,7 @@ typedef struct request_t
     char    *method;
     char     path[URL_SIZE];
     char    *version;
-    char    *mime_type;
+    char     mime_type[MIME_SIZE];
     char    *response;
     ssize_t  response_len;
     off_t    content_len;

@@ -13,9 +13,6 @@
 
 #define TIMEOUT 3000
 #define MILLI_SEC 1000
-#define RAW_SIZE 8192
-#define RES_SIZE 4096
-#define MIME_SIZE 32
 
 static const char *const Http_methods[]              = {"HEAD", "GET", "POST"};
 static const char *const Unsupported_Http_methods[]  = {"PATCH", "PUT", "DELETE"};
@@ -237,7 +234,7 @@ static void url_decode(char *url)
             *url              = output;
             // 20in%20name.txt
             // in%20name.txt00
-            strncpy(url + 1, url + 3, strlen(url + 1));
+            strcopy(url + 1, url + 3, strlen(url + 1));
         }
         url++;
     }
@@ -258,7 +255,6 @@ static ssize_t check_method(request_t *request)
     {
         if(strcmp(request->method, Http_methods[i]) == 0)
         {
-            request->status = OK;
             return 0;
         }
     }
@@ -281,7 +277,6 @@ static ssize_t check_HTTP(request_t *request)
     {
         if(strcmp(request->version, Http_versions[i]) == 0)
         {
-            request->status = OK;
             return 0;
         }
     }
@@ -318,7 +313,7 @@ static ssize_t check_dir(request_t *request)
         {
             errno           = 0;
             request->status = NOT_FOUND;
-            return 0;
+            return -1;
         }
         perror("check dir");
         request->err    = errno;
@@ -345,7 +340,7 @@ static ssize_t check_dir(request_t *request)
             {
                 errno           = 0;
                 request->status = FORBIDDEN;
-                return 0;
+                return -1;
             }
             perror("check dir is dir");
             request->status = INTERNAL_SERVER_ERROR;
@@ -359,29 +354,42 @@ static ssize_t check_dir(request_t *request)
     return 0;
 }
 
-static ssize_t parse_mime_type(request_t *request)
+static void parse_mime_type(request_t *request)
 {
-    char *saveptr;
+    size_t count;
+    size_t index;
+    char  *from;
+    char  *to;
 
-    strtok_r(request->path, ".", &saveptr);
-    request->mime_type = strtok_r(NULL, ".", &saveptr);
-
-    printf("mime_type: %s\n", request->mime_type);
-
-    if(request->mime_type)
+    from  = request->path;
+    to    = request->mime_type;
+    index = 0;
+    count = 0;
+    do
     {
-        memcpy(request->path + strlen(request->path), ".", 1);
-        printf("request->path: %s\n", request->path);
-        return 0;
-    }
-    request->mime_type = strndup(default_type, strlen(default_type));
-    if(!request->mime_type)
+        ++count;
+        if(*from == '.')
+        {
+            index = count;
+        }
+    } while(*from++ != '\0');
+
+    if(index == 0)
     {
-        perror("parse_mime_type strdup error");
-        return -1;
+        *to = '\0';
     }
+    else
+    {
+        from = request->path + index;
+        do
+        {
+            *to++ = *from++;
+        } while(*from != '\0');
+        *to = '\0';
+    }
+
     printf("request->path: %s\n", request->path);
-    return 0;
+    printf("request->mime_type %s\n", request->mime_type);
 }
 
 void fsm_run(int sockfd)
@@ -404,15 +412,17 @@ void fsm_run(int sockfd)
     }
     memset(request.raw, 0, RAW_SIZE);
 
-    request.response = (char *)malloc(RES_SIZE);
+    request.response = (char *)malloc(BUFFER_SIZE);
     if(!request.response)
     {
         perror("failed to malloc");
         free(request.raw);
         exit(EXIT_FAILURE);
     }
-    memset(request.response, 0, RES_SIZE);
+    memset(request.response, 0, BUFFER_SIZE);
     request.sockfd = &sockfd;
+
+    memcpy(request.mime_type, default_type, strlen(default_type));
 
     printf("%s\n", "workers spawned");
 
@@ -490,8 +500,6 @@ fsm_state_t parse_request(void *args)
 
     printf("%s\n", "in parse_request");
 
-    request->status = OK;
-
     request->raw[RAW_SIZE - 1] = '\0';
 
     line = strtok_r(request->raw, new_line, &saveptr);
@@ -534,10 +542,7 @@ fsm_state_t parse_request(void *args)
     request->version = version;
     printf("version: %s\n", request->version);
 
-    if(check_dir(request) < 0 || parse_mime_type(request) < 0)
-    {
-        return ERROR_HANDLER;
-    }
+    parse_mime_type(request);
 
     return CHECK_REQUEST;
 }
@@ -546,11 +551,14 @@ fsm_state_t check_request(void *args)
 {
     request_t *request = (request_t *)args;
 
-    request->status = OK;
-
     printf("%s\n", "in check_request");
 
     if(check_method(request) < 0 || check_HTTP(request) < 0 || check_skipping(request) < 0)
+    {
+        return ERROR_HANDLER;
+    }
+
+    if(check_dir(request) < 0)
     {
         return ERROR_HANDLER;
     }
@@ -568,8 +576,6 @@ static void process_request(void *args)
     char        size_buf[MIME_SIZE];
     char        timestamp[URL_SIZE];
 
-    request->status = OK;
-
     printf("%s\n", "in process_request");
 
     ptr    = request->response;
@@ -580,58 +586,27 @@ static void process_request(void *args)
 
     ptr = strcopy(ptr, server, strlen(server));
 
-    get_timestamp(timestamp, sizeof(timestamp));
+    get_timestamp(timestamp, URL_SIZE);
     ptr = strcopy(ptr, timestamp, strlen(timestamp));
     ptr = strcopy(ptr, new_line, strlen(new_line));
 
     mime_type = mime_to_string(request->mime_type);
-    ptr       = strconcat(ptr, content_type, strlen(content_type), mime_type, strlen(mime_type));
+    ptr       = strcopy(ptr, content_type, strlen(content_type));
+    ptr       = strcopy(ptr, mime_type, strlen(mime_type));
 
-    snprintf(size_buf, sizeof(size_buf), "%lld", (long long)request->content_len);
-    ptr = strconcat(ptr, content_len, strlen(content_len), size_buf, strlen(size_buf));
-
+    memset(size_buf, 0, MIME_SIZE);
+    snprintf(size_buf, MIME_SIZE, "%lld", (long long)request->content_len);
+    ptr    = strcopy(ptr, content_len, strlen(content_len));
+    ptr    = strcopy(ptr, size_buf, strlen(size_buf));
     ptr    = strcopy(ptr, terminate, strlen(terminate));
     *++ptr = '\0';
 
     request->response_len = (ssize_t)strlen(request->response);
-
-    // char       *ptr;
-    // const char *status;
-    // const char *mime_type;
-    //  char        timestamp[URL_SIZE];
-    //      char        buf[MIME_SIZE];
-
-    // ptr    = request->response;
-    // ptr    = strcopy(ptr, Http_versions[0], strlen(Http_versions[0]));
-    // ptr    = strcopy(ptr, space, strlen(space));
-    // status = status_to_string(request->status);
-    // ptr    = strcopy(ptr, status, strlen(status));
-
-    // ptr = strcopy(ptr, server, strlen(server));
-
-    // get_timestamp(timestamp, URL_SIZE);
-    // ptr = strcopy(ptr, timestamp, strlen(timestamp));
-    // ptr = strcopy(ptr, new_line, strlen(new_line));
-
-    // mime_type = mime_to_string(request->mime_type);
-    // ptr       = strcopy(ptr, content_type, strlen(content_type));
-    // ptr       = strcopy(ptr, mime_type, strlen(mime_type));
-
-    // memset(buf, 0, MIME_SIZE);
-    // snprintf(buf, MIME_SIZE, "%lld", (long long)request->content_len);
-    // ptr    = strcopy(ptr, content_len, strlen(content_len));
-    // ptr    = strcopy(ptr, buf, strlen(buf));
-    // ptr    = strcopy(ptr, terminate, strlen(terminate));
-    // *++ptr = '\0';
-
-    // request->response_len = (ssize_t)strlen(request->response);
 }
 
 fsm_state_t response_handler(void *args)
 {
     request_t *request = (request_t *)args;
-
-    request->status = OK;
 
     process_request(request);
 
