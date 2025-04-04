@@ -1,3 +1,5 @@
+// cppcheck-suppress-file unusedStructMember
+
 #ifndef SIG_UTILS_H
 #define SIG_UTILS_H
 
@@ -11,6 +13,14 @@
 // 1 = Verbose, 2 = Debug
 extern int                   verbose;    // NOLINT(cppcoreguidelines-avoid-non-const-global-variables,-warnings-as-errors)
 extern volatile sig_atomic_t running;    // NOLINT(cppcoreguidelines-avoid-non-const-global-variables,-warnings-as-errors)
+
+typedef struct
+{
+    int sockfd;
+    int worker_id;
+    int fd_num;
+    int client_fd;
+} worker_t;
 
 void setup_signal(void);
 

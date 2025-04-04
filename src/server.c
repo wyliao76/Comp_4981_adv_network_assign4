@@ -14,14 +14,31 @@
 #define MAX_CLIENTS 64
 #define MAX_FDS (MAX_CLIENTS + 2)
 
-static void worker_process(int sockfd)
+static void worker_process(int sockfd, int worker_id)
 {
+    void    *handle;
+    worker_t worker_args;
+
+    memset(&worker_args, 0, sizeof(worker_args));
+    worker_args.sockfd    = sockfd;
+    worker_args.worker_id = worker_id;
+
+    PRINT_VERBOSE("%s\n", "workers spawned");
+
     while(running)
     {
-        void *handle;
-        void (*func)(int);
+        void (*func)(void *);
+
+        worker_args.client_fd = recv_fd(sockfd, &worker_args.fd_num);
+        if(worker_args.client_fd <= 0)
+        {
+            perror("recv_fd error");
+        }
+        PRINT_VERBOSE("Worker %d (PID: %d) started\n", worker_id, getpid());
+        PRINT_VERBOSE("%s fd: %d num: %d\n", "receiving fd from monitor...", worker_args.client_fd, worker_args.fd_num);
 
         PRINT_DEBUG("%s\n", "loading lib...");
+
         handle = dlopen("./libmylib.so", RTLD_LAZY);
         if(!handle)
         {
@@ -32,7 +49,7 @@ static void worker_process(int sockfd)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wpedantic"
 #pragma GCC diagnostic ignored "-Wstrict-prototypes"
-        func = (void (*)(int))dlsym(handle, "fsm_run");
+        func = (void (*)(void *))dlsym(handle, "fsm_run");
 #pragma GCC diagnostic pop
         if(!func)
         {
@@ -41,7 +58,7 @@ static void worker_process(int sockfd)
             exit(EXIT_FAILURE);
         }
 
-        func(sockfd);
+        func(&worker_args);
 
         PRINT_DEBUG("%s\n", "unloading lib...");
         dlclose(handle);
@@ -239,7 +256,7 @@ int main(int argc, char *argv[], char *envp[])
             }
             else if(pids[i] == 0)
             {
-                worker_process(args.sockfd[0]);
+                worker_process(args.sockfd[0], i);
             }
         }
 
@@ -266,7 +283,7 @@ int main(int argc, char *argv[], char *envp[])
                         }
                         else if(pids[i] == 0)
                         {
-                            worker_process(args.sockfd[0]);
+                            worker_process(args.sockfd[0], i);
                         }
                         break;
                     }

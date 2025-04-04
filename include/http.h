@@ -48,7 +48,7 @@ typedef struct request_t
     int      client_fd;
     int      fd_num;
     int     *sockfd;
-    int      worker_id;
+    int     *worker_id;
     int      err;
 } request_t;
 
@@ -72,7 +72,7 @@ typedef struct funcMapping
 
 extern const struct fsm_transition transitions[];
 
-void        fsm_run(int sockfd);
+void        fsm_run(void *args);
 fsm_state_t read_request(void *args);
 fsm_state_t parse_request(void *args);
 fsm_state_t check_request(void *args);

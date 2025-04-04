@@ -391,8 +391,9 @@ static void parse_mime_type(request_t *request)
     printf("request->mime_type %s\n", request->mime_type);
 }
 
-void fsm_run(int sockfd)
+void fsm_run(void *args)
 {
+    worker_t      *worker_args = (worker_t *)args;
     request_t      request;
     fsm_state_func perform;
     fsm_state_t    from_id;
@@ -419,11 +420,12 @@ void fsm_run(int sockfd)
         exit(EXIT_FAILURE);
     }
     memset(request.response, 0, BUFFER_SIZE);
-    request.sockfd = &sockfd;
+    request.sockfd    = &worker_args->sockfd;
+    request.client_fd = worker_args->client_fd;
+    request.fd_num    = worker_args->fd_num;
+    request.worker_id = &worker_args->worker_id;
 
     memcpy(request.mime_type, default_type, strlen(default_type));
-
-    printf("%s\n", "workers spawned");
 
     do
     {
@@ -453,15 +455,6 @@ fsm_state_t read_request(void *args)
     printf("%s\n", "in read_request");
 
     request->status = OK;
-
-    request->client_fd = recv_fd(*request->sockfd, &request->fd_num);
-    if(request->client_fd <= 0)
-    {
-        perror("recv_fd error");
-    }
-    printf("Worker %d (PID: %d) started\n", request->worker_id, getpid());
-
-    printf("%s fd: %d num: %d\n", "receiving fd from monitor...", request->client_fd, request->fd_num);
 
     result = setSocketNonBlocking(request->client_fd, &request->err);
     if(result == -1)
