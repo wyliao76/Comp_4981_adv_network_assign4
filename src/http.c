@@ -8,7 +8,6 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
-#include <time.h>
 #include <unistd.h>
 
 #define TIMEOUT 3000
@@ -150,7 +149,7 @@ static ssize_t get(request_t *request)
 static const funcMapping http_func[] = {
     {"HEAD", head},
     {"GET",  get },
-    // {"POST",  post},
+ // {"POST",  post},
     {NULL,   NULL}  // Null termination for safety
 };
 
@@ -534,7 +533,7 @@ fsm_state_t parse_request(void *args)
     url_decode(copy_path);
 
     memcpy(request->path, base_path, strlen(base_path));
-    memcpy(request->path + strlen(base_path), copy_path, strlen(copy_path));
+    strncpy(request->path + strlen(base_path), copy_path, strlen(copy_path));
 
     free(copy_path);
     printf("path: %s\n", request->path);

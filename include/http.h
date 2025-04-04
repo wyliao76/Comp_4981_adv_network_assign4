@@ -4,6 +4,7 @@
 #define HTTP_H
 
 #include "fsm.h"
+#include <time.h>
 #include <unistd.h>
 
 #define RAW_SIZE 8192
