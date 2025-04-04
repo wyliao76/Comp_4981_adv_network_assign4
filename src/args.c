@@ -10,6 +10,7 @@
 
 #define UNKNOWN_OPTION_MESSAGE_LEN 22
 #define BASE_TEN 10
+#define MAX_WORKERS 10
 #define INADDRESS "0.0.0.0"
 #define PORT "8080"
 #define WORKERS 3
@@ -75,6 +76,12 @@ void get_arguments(args_t *args, int argc, char *argv[])
                 break;
             case 'w':
                 args->workers = convert_str_t_l(optarg);
+                if(args->workers > MAX_WORKERS)
+                {
+                    char msg[BUF_SIZE];
+                    snprintf(msg, sizeof(msg), "Workers must be between 1 and %d", MAX_WORKERS);
+                    usage(argv[0], EXIT_FAILURE, msg);
+                }
                 break;
             case 'h':
                 usage(argv[0], EXIT_SUCCESS, NULL);

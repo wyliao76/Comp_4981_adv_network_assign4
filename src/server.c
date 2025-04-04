@@ -1,6 +1,5 @@
 #include "args.h"
 #include "fsm.h"
-#include "io.h"
 #include "networking.h"
 #include "utils.h"
 #include <dlfcn.h>
@@ -12,7 +11,7 @@
 #include <sys/wait.h>
 
 #define BACKLOG 5
-#define MAX_CLIENTS 3
+#define MAX_CLIENTS 64
 #define MAX_FDS (MAX_CLIENTS + 2)
 
 static void worker_process(int sockfd)
@@ -23,7 +22,7 @@ static void worker_process(int sockfd)
         void (*func)(int);
 
         PRINT_DEBUG("%s\n", "loading lib...");
-        handle = dlopen("./http.so", RTLD_LAZY);
+        handle = dlopen("./libmylib.so", RTLD_LAZY);
         if(!handle)
         {
             printf("dlopen failed: %s\n", dlerror());
