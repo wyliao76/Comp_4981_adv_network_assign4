@@ -8,27 +8,82 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
+#include <time.h>
 
 #define BACKLOG 5
 #define MAX_CLIENTS 64
 #define MAX_FDS (MAX_CLIENTS + 2)
 
+static void load_lib(const char *lib_path, void **handle, void (**func)(void *))
+{
+    PRINT_DEBUG("%s\n", "loading lib...");
+
+    *handle = dlopen(lib_path, RTLD_LAZY);
+    if(!*handle)
+    {
+        printf("dlopen failed: %s\n", dlerror());
+        exit(EXIT_FAILURE);
+    }
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpedantic"
+#pragma GCC diagnostic ignored "-Wstrict-prototypes"
+    *func = (void (*)(void *))dlsym(*handle, "fsm_run");
+#pragma GCC diagnostic pop
+    if(!*func)
+    {
+        fprintf(stderr, "dlsym failed: %s\n", dlerror());
+        dlclose(*handle);
+        exit(EXIT_FAILURE);
+    }
+}
+
+static ssize_t is_new_lib(const char *lib_path, time_t *last_modified_time)
+{
+    struct stat file_stat;
+
+    if(stat(lib_path, &file_stat) == -1)
+    {
+        perror("check dir is dir");
+        exit(EXIT_FAILURE);
+    }
+
+    if(*last_modified_time < file_stat.st_mtime)
+    {
+        *last_modified_time = file_stat.st_mtime;
+        return 1;
+    }
+    return 0;
+}
+
 static void worker_process(int sockfd, int worker_id)
 {
-    void    *handle;
-    worker_t worker_args;
+    worker_t   worker_args;
+    time_t     last_modified_time;
+    const char lib_path[] = "./libmylib.so";
+    void      *handle;
+    void (*func)(void *);
 
     memset(&worker_args, 0, sizeof(worker_args));
     worker_args.sockfd    = sockfd;
     worker_args.worker_id = worker_id;
+    last_modified_time    = 0;
+    handle                = NULL;
+    func                  = NULL;
 
     PRINT_VERBOSE("%s\n", "workers spawned");
 
+    PRINT_DEBUG("Last modified: %s", ctime(&last_modified_time));
+
+    is_new_lib(lib_path, &last_modified_time);
+    load_lib(lib_path, &handle, &func);
+
+    PRINT_DEBUG("Last modified: %s", ctime(&last_modified_time));
+
     while(running)
     {
-        void (*func)(void *);
-
         worker_args.client_fd = recv_fd(sockfd, &worker_args.fd_num);
         if(worker_args.client_fd <= 0)
         {
@@ -37,32 +92,18 @@ static void worker_process(int sockfd, int worker_id)
         PRINT_VERBOSE("Worker %d (PID: %d) started\n", worker_id, getpid());
         PRINT_VERBOSE("%s fd: %d num: %d\n", "receiving fd from monitor...", worker_args.client_fd, worker_args.fd_num);
 
-        PRINT_DEBUG("%s\n", "loading lib...");
-
-        handle = dlopen("./libmylib.so", RTLD_LAZY);
-        if(!handle)
+        if(is_new_lib(lib_path, &last_modified_time))
         {
-            printf("dlopen failed: %s\n", dlerror());
-            exit(EXIT_FAILURE);
-        }
-
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wpedantic"
-#pragma GCC diagnostic ignored "-Wstrict-prototypes"
-        func = (void (*)(void *))dlsym(handle, "fsm_run");
-#pragma GCC diagnostic pop
-        if(!func)
-        {
-            fprintf(stderr, "dlsym failed: %s\n", dlerror());
+            PRINT_DEBUG("%s %s", "new lib found! Unloading lib...", ctime(&last_modified_time));
             dlclose(handle);
-            exit(EXIT_FAILURE);
+
+            load_lib(lib_path, &handle, &func);
         }
 
         func(&worker_args);
-
-        PRINT_DEBUG("%s\n", "unloading lib...");
-        dlclose(handle);
     }
+    PRINT_DEBUG("%s\n", "worker exiting, unloading lib...");
+    dlclose(handle);
 }
 
 static fsm_state_t event_loop(void *args);
