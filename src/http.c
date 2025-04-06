@@ -1,4 +1,5 @@
 #include "http.h"
+#include "database.h"
 #include "networking.h"
 #include "utils.h"
 #include <errno.h>
@@ -141,15 +142,165 @@ static ssize_t get(request_t *request)
     return result;
 }
 
-// static ssize_t post(request_t *request)
-// {
+static char *trim(char *str)
+{
+    char *end;
+    // Trim leading
+    while(*str && (*str == ' ' || *str == '\t' || *str == '\n' || *str == '\r'))
+    {
+        str++;
+    }
 
-// }
+    // Trim trailing
+    end = str + strlen(str) - 1;
+    while(end > str && (*end == ' ' || *end == '\t' || *end == '\n' || *end == '\r'))
+    {
+        *end-- = '\0';
+    }
+
+    return str;
+}
+
+static ssize_t post(request_t *request)
+{
+    DBO    userDB;
+    char   user_name[] = "users";
+    char  *saveptr;
+    char  *body;
+    char  *copy_line;
+    size_t len;
+    char  *pair;
+
+    userDB.name = user_name;
+
+    printf("%s\n", "In POST");
+
+    if(database_open(&userDB, &request->err) < 0)
+    {
+        perror("database error");
+        request->status = INTERNAL_SERVER_ERROR;
+        return -1;
+    }
+
+    body = strstr(request->raw, terminate);
+
+    body = body + strlen(terminate);
+
+    // printf("%s\n", body);
+
+    copy_line = strndup(body, strlen(body));
+    if(!copy_line)
+    {
+        request->status = INTERNAL_SERVER_ERROR;
+        request->err    = errno;
+        return -1;
+    }
+
+    printf("copy_line: %s\n", copy_line);
+
+    for(size_t i = 0; i < strlen(copy_line); i++)
+    {
+        printf("%02x ", (unsigned char)copy_line[i]);
+    }
+    printf("\n");
+
+    body = copy_line + 1;
+
+    len = strlen(body);
+
+    // Remove closing '}'
+    body[len - 1] = '\0';
+
+    printf("body: %s\n", body);
+
+    for(size_t i = 0; i < len; i++)
+    {
+        printf("%02x ", (unsigned char)body[i]);
+    }
+    printf("\n");
+
+    pair = strtok_r(body, ",", &saveptr);
+
+    while(pair)
+    {
+        char *colon_ptr = strchr(pair, ':');
+        if(colon_ptr)
+        {
+            char *key   = pair;
+            char *value = colon_ptr + 1;
+
+            printf("Key: %s\n", key);
+            printf("Value: %s\n", value);
+            *colon_ptr = '\0';
+
+            key   = trim(key);
+            value = trim(value);
+
+            printf("clean key: %s\n", key);
+            printf("clean value: %s\n", value);
+
+            // // Clean up quotes
+            //         // clean up \n
+            //         key++;
+            if(key[0] == '"')
+            {
+                key++;
+            }
+            if(key[strlen(key) - 1] == '"')
+            {
+                key[strlen(key) - 1] = '\0';
+            }
+
+            // // clean up \n
+            // value++;
+            // printf("clean Value 1: %s\n", value);
+            if(value[0] == '"')
+            {
+                value++;
+            }
+            // printf("clean Value: %s\n", value);
+
+            if(value[strlen(value) - 1] == '"')
+            {
+                value[strlen(value) - 1] = '\0';
+            }
+            // // Trim any potential newline or spaces
+            // value = strpbrk(value, "\n\r\t ") ? value : NULL;
+            // if(value)
+            // {
+            //     value[strcspn(value, "\n\r\t")] = '\0';    // Remove newline and space
+            // }
+
+            printf("final key: %s\n", key);
+            printf("final value: %s\n", value);
+
+            // if(key && value)
+            // {
+            //     printf("final Key: %s\n", key);
+            //     for(size_t i = 0; i < strlen(key); i++)
+            //     {
+            //         printf("%02x ", (unsigned char)key[i]);
+            //     }
+            //     printf("\n");
+
+            //     printf("final Value: %s\n", value);
+
+            store_string(userDB.db, key, value);
+            // }
+        }
+        pair = strtok_r(NULL, ",", &saveptr);
+    }
+
+    free(copy_line);
+    dbm_close(userDB.db);
+
+    return write_fully(request->client_fd, request->response, request->response_len, &request->err);
+}
 
 static const funcMapping http_func[] = {
     {"HEAD", head},
     {"GET",  get },
- // {"POST",  post},
+    {"POST", post},
     {NULL,   NULL}  // Null termination for safety
 };
 
@@ -199,23 +350,67 @@ static ssize_t header_end(char *buf)
     return -1;
 }
 
-static void trim_param(char *url)
+static ssize_t parse_param(request_t *request)
 {
-    printf("trim_param: %s\n", url);
+    char *copy_path;
+    char *qmark;
+    // printf("parse_param: %s\n", request->path);
 
-    do
+    copy_path = strndup(request->path, strlen(request->path));
+    if(!copy_path)
     {
-        if(*url == '?')
-        {
-            *url = '\0';
-            break;
-        }
-    } while(*++url != '\0');
-
-    while(*url++ != '\0')
-    {
-        *url = 0;
+        perror("parse_param error");
+        request->status = INTERNAL_SERVER_ERROR;
+        return -1;
     }
+    qmark = strchr(copy_path, '?');
+    if(qmark)
+    {
+        char *query_str = qmark + 1;
+        *qmark          = '\0';    // Null-terminate to isolate path
+
+        // Tokenize query parameters
+
+        // for(kv = strtok_r(query_str, "&", &saveptr); kv; kv = strtok_r(NULL, "&", &saveptr))
+        for(int i = 0; i < PARAMS; i++)
+        {
+            char    *kv;
+            char    *saveptr;
+            param_t *param;
+
+            param = (param_t *)malloc(sizeof(param_t));
+            if(!param)
+            {
+                request->status = INTERNAL_SERVER_ERROR;
+                goto cleanup;
+            }
+
+            kv = strtok_r(query_str, "&", &saveptr);
+
+            param->key = strtok_r(kv, "=", &saveptr);
+
+            // kv = strtok_r(NULL, "&", &saveptr);
+
+            param->value = strtok_r(NULL, "=", &saveptr);
+            // store key/val as needed
+            request->params[i] = param;
+            printf("%s\n", request->params[i]->key);
+            printf("%s\n", request->params[i]->key);
+        }
+    }
+    free(copy_path);
+    for(int i = 0; i < PARAMS; i++)
+    {
+        free(request->params[i]);
+    }
+    return 0;
+cleanup:
+    free(copy_path);
+    for(int i = 0; i < PARAMS; i++)
+    {
+        free(request->params[i]);
+    }
+    return -1;
 }
 
 static void url_decode(char *url)
@@ -391,6 +586,11 @@ static void parse_mime_type(request_t *request)
     printf("request->mime_type %s\n", request->mime_type);
 }
 
+// static ssize_t body_parser(request_t *request)
+// {
+
+// }
+
 void fsm_run(void *args)
 {
     worker_t      *worker_args = (worker_t *)args;
@@ -483,59 +683,78 @@ fsm_state_t parse_request(void *args)
 {
     request_t *request = (request_t *)args;
 
-    char *line;
-    char *saveptr;
-    char *method;
-    char *path;
-    char *copy_path;
-    char *version;
+    const char *line;
+    char       *saveptr;
+    char       *copy_path;
+    char       *copy_raw;
 
     printf("%s\n", "in parse_request");
 
-    request->raw[RAW_SIZE - 1] = '\0';
-
-    line = strtok_r(request->raw, new_line, &saveptr);
-
-    if(!line)
-    {
-        return ERROR_HANDLER;
-    }
-    printf("Line: %s\n", line);
-
-    method  = strtok_r(line, " ", &saveptr);
-    path    = strtok_r(NULL, " ", &saveptr);
-    version = strtok_r(NULL, " ", &saveptr);
-
-    if(!method || !path || !version)
-    {
-        request->status = BAD_REQUEST;
-        return ERROR_HANDLER;
-    }
-
-    request->method = method;
-    printf("method: %s\n", request->method);
-
-    copy_path = strndup(path, strlen(path));
-    if(!copy_path)
+    copy_raw = strndup(request->raw, RAW_SIZE);
+    if(!copy_raw)
     {
         request->status = INTERNAL_SERVER_ERROR;
         return ERROR_HANDLER;
     }
 
-    trim_param(copy_path);
-    url_decode(copy_path);
+    copy_raw[RAW_SIZE - 1] = '\0';
+
+    line = strtok_r(copy_raw, new_line, &saveptr);
+
+    if(!line)
+    {
+        free(copy_raw);
+        return ERROR_HANDLER;
+    }
+    printf("Line: %s\n", line);
+
+    if(sscanf(line, "%7s %1023s %15s", request->method, request->path, request->version) != 3)
+    {
+        request->status = BAD_REQUEST;
+        free(copy_raw);
+        return ERROR_HANDLER;
+    }
+
+    // method  = strtok_r(line, " ", &saveptr);
+    // path    = strtok_r(NULL, " ", &saveptr);
+    // version = strtok_r(NULL, " ", &saveptr);
+
+    // if(!method || !path || !version)
+    // {
+    //     request->status = BAD_REQUEST;
+    //     free(copy_raw);
+    //     return ERROR_HANDLER;
+    // }
+
+    // memcpy(request->method, method, strlen(method));
+    printf("method: %s\n", request->method);
+    printf("path: %s\n", request->path);
+    printf("version: %s\n", request->version);
+
+    copy_path = strndup(request->path, strlen(request->path));
+    if(!copy_path)
+    {
+        free(copy_raw);
+        request->status = INTERNAL_SERVER_ERROR;
+        return ERROR_HANDLER;
+    }
+
+    parse_param(request);
+    url_decode(request->path);
 
     memcpy(request->path, base_path, strlen(base_path));
     strncpy(request->path + strlen(base_path), copy_path, strlen(copy_path));
 
     free(copy_path);
+
     printf("path: %s\n", request->path);
 
-    request->version = version;
-    printf("version: %s\n", request->version);
+    // memcpy(request->version, version, strlen(version));
+    // printf("version: %s\n", request->version);
 
     parse_mime_type(request);
 
+    free(copy_raw);
     return CHECK_REQUEST;
 }
 
@@ -550,9 +769,12 @@ fsm_state_t check_request(void *args)
         return ERROR_HANDLER;
     }
 
-    if(check_dir(request) < 0)
+    if(request->method == Http_methods[0] || request->method == Http_methods[1])
     {
-        return ERROR_HANDLER;
+        if(check_dir(request) < 0)
+        {
+            return ERROR_HANDLER;
+        }
     }
 
     return RESPONSE_HANDLER;
@@ -566,7 +788,7 @@ static void process_request(void *args)
     const char *status;
     const char *mime_type;
     char        size_buf[MIME_SIZE];
-    char        timestamp[URL_SIZE];
+    char        timestamp[PATH_SIZE];
 
     printf("%s\n", "in process_request");
 
@@ -578,7 +800,7 @@ static void process_request(void *args)
 
     ptr = strcopy(ptr, server, strlen(server));
 
-    get_timestamp(timestamp, URL_SIZE);
+    get_timestamp(timestamp, PATH_SIZE);
     ptr = strcopy(ptr, timestamp, strlen(timestamp));
     ptr = strcopy(ptr, new_line, strlen(new_line));
 
@@ -608,6 +830,11 @@ fsm_state_t response_handler(void *args)
     printf("request->response: %s\n", request->response);
 
     if(execute_functions(request, http_func) == 1)
+    {
+        return ERROR_HANDLER;
+    }
+
+    if(setSocketBlocking(request->client_fd, &request->err) == -1)
     {
         return ERROR_HANDLER;
     }

@@ -106,6 +106,23 @@ int setSocketNonBlocking(int socket, int *err)
     return 0;
 }
 
+int setSocketBlocking(int socket, int *err)
+{
+    int flags = fcntl(socket, F_GETFL, 0);
+    if(flags == -1)
+    {
+        *err = errno;
+        return -1;
+    }
+    flags &= ~O_NONBLOCK;
+    if(fcntl(socket, F_SETFL, flags) == -1)
+    {
+        *err = errno;
+        return -1;
+    }
+    return 0;
+}
+
 static int setSockReuse(int fd, int *err)
 {
     int opt;

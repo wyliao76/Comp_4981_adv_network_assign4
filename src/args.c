@@ -76,7 +76,7 @@ void get_arguments(args_t *args, int argc, char *argv[])
                 break;
             case 'w':
                 args->workers = convert_str_t_l(optarg);
-                if(args->workers > MAX_WORKERS)
+                if(args->workers > MAX_WORKERS || args->workers < 1)
                 {
                     char msg[BUF_SIZE];
                     snprintf(msg, sizeof(msg), "Workers must be between 1 and %d", MAX_WORKERS);

@@ -9,8 +9,11 @@
 
 #define RAW_SIZE 8192
 #define BUFFER_SIZE 4096
-#define URL_SIZE 2048
+#define METHOD_SIZE 8
+#define PATH_SIZE 1024
+#define VERSION_SIZE 16
 #define MIME_SIZE 32
+#define PARAMS 10
 
 typedef enum
 {
@@ -33,13 +36,20 @@ typedef enum
     NOT_IMPLEMENTED       = 501,
 } status_t;
 
+typedef struct param_t
+{
+    char *key;
+    char *value;
+} param_t;
+
 typedef struct request_t
 {
     char    *raw;
-    char    *method;
-    char     path[URL_SIZE];
-    char    *version;
+    char     method[METHOD_SIZE];
+    char     path[PATH_SIZE];
+    char     version[VERSION_SIZE];
     char     mime_type[MIME_SIZE];
+    param_t *params[PARAMS];
     char    *response;
     ssize_t  response_len;
     off_t    content_len;
