@@ -1,1 +1,1 @@
-main src/main.c src/display.c include/display.h
+server src/server.c src/utils.c src/args.c src/networking.c include/utils.h include/args.h include/networking.h src/database.c include/database.h src/fsm.c include/fsm.h src/http.c include/http.h gdbm_compat
