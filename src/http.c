@@ -47,7 +47,8 @@ static const MimeMapping Mime_map[] = {
     {"png",  "image/png\r\n"                    },
     {"gif",  "image/gif\r\n"                    },
     {"json", "application/json\r\n"             },
-    {"swf",  "application/x-shockwave-flash\r\n"}
+    {"swf",  "application/x-shockwave-flash\r\n"},
+    {"pdf",  "application/pdf\r\n"}
 };
 
 static const char *mime_to_string(const char *mime)
