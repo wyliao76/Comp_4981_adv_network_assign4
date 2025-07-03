@@ -579,6 +579,11 @@ static void parse_mime_type(request_t *request)
         *to = '\0';
     }
 
+    if (*request->mime_type == '\0')
+    {
+        memcpy(request->mime_type, default_type, strlen(default_type));
+    }
+
     printf("request->path: %s\n", request->path);
     printf("request->mime_type %s\n", request->mime_type);
 }
@@ -621,8 +626,6 @@ void fsm_run(void *args)
     request.client_fd = worker_args->client_fd;
     request.fd_num    = worker_args->fd_num;
     request.worker_id = &worker_args->worker_id;
-
-    memcpy(request.mime_type, default_type, strlen(default_type));
 
     do
     {
