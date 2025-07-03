@@ -1,3 +1,11 @@
+
+# website
+https://fortunedgalab.xyz/httptest
+
+
+# cmd to compile shared lib
+gcc -shared -fPIC -o libmylib.so src/http.c src/database.c src/networking.c src/fsm.c src/utils.c -I ./include/
+
 # template-c Repository Guide
 
 Welcome to the `c template` repository. This guide will help you set up and run the provided scripts.
@@ -98,6 +106,3 @@ The files.txt file contains:
 <executable> <source files> <header files> <libraries>
 
 When you need to add/removes files to/from the project you must rerun the 4 steps above. 
-
-# cmd to compile shared lib
-gcc -shared -fPIC -o libmylib.so src/http.c src/database.c src/networking.c src/fsm.c src/utils.c -I ./include/
