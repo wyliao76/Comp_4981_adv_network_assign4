@@ -82,15 +82,6 @@ typedef struct funcMapping
 
 extern const struct fsm_transition transitions[];
 
-void        fsm_run(void *args);
-fsm_state_t read_request(void *args);
-fsm_state_t parse_request(void *args);
-fsm_state_t check_request(void *args);
-fsm_state_t response_handler(void *args);
-fsm_state_t error_handler(void *args);
-
-ssize_t read_fully(int fd, char *buf, size_t size, int *err);
-ssize_t write_fully(int fd, const void *buf, ssize_t size, int *err);
-ssize_t copy(int from, int to, int *err);
+void fsm_run(void *args);
 
 #endif    // HTTP_H

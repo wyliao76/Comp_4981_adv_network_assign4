@@ -229,7 +229,7 @@ static fsm_state_t event_loop(void *args)
     return END;
 }
 
-int main(int argc, char *argv[], char *envp[])
+int main(int argc, char *argv[], const char *envp[])
 {
     int    retval;
     args_t args;

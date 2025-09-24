@@ -35,6 +35,14 @@ static ssize_t     check_method(request_t *request);
 static ssize_t     check_HTTP(request_t *request);
 static ssize_t     check_skipping(request_t *request);
 static void        process_request(void *args);
+static fsm_state_t read_request(void *args);
+static fsm_state_t parse_request(void *args);
+static fsm_state_t check_request(void *args);
+static fsm_state_t response_handler(void *args);
+static fsm_state_t error_handler(void *args);
+static ssize_t     read_fully(int fd, char *buf, size_t size, int *err);
+static ssize_t     write_fully(int fd, const void *buf, ssize_t size, int *err);
+static ssize_t     copy(int from, int to, int *err);
 
 static const MimeMapping Mime_map[] = {
     {"txt",  "text/plain\r\n"                   },
@@ -48,7 +56,7 @@ static const MimeMapping Mime_map[] = {
     {"gif",  "image/gif\r\n"                    },
     {"json", "application/json\r\n"             },
     {"swf",  "application/x-shockwave-flash\r\n"},
-    {"pdf",  "application/pdf\r\n"}
+    {"pdf",  "application/pdf\r\n"              }
 };
 
 static const char *mime_to_string(const char *mime)
@@ -547,10 +555,10 @@ static ssize_t check_dir(request_t *request)
 
 static void parse_mime_type(request_t *request)
 {
-    size_t count;
-    size_t index;
-    char  *from;
-    char  *to;
+    size_t      count;
+    size_t      index;
+    const char *from;
+    char       *to;
 
     from  = request->path;
     to    = request->mime_type;
@@ -579,7 +587,7 @@ static void parse_mime_type(request_t *request)
         *to = '\0';
     }
 
-    if (*request->mime_type == '\0')
+    if(*request->mime_type == '\0')
     {
         memcpy(request->mime_type, default_type, strlen(default_type));
     }
