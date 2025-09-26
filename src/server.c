@@ -144,7 +144,7 @@ static fsm_state_t event_loop(void *args)
         }
         if(fds[0].revents & POLLIN)
         {
-            client_fd = accept(*server_args->fd, NULL, 0);
+            client_fd = accept(*server_args->fd, NULL, NULL);
             if(client_fd < 0)
             {
                 if(errno == EINTR)

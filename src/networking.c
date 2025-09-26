@@ -238,7 +238,7 @@ ssize_t convert_port(const char *str, in_port_t *port)
 
 int send_fd(int socket, int fd, int fd_num)
 {
-    struct msghdr   msg = {0};
+    struct msghdr   msg = {.msg_name = NULL, .msg_namelen = 0, .msg_iov = NULL, .msg_iovlen = 0, .msg_control = NULL, .msg_controllen = 0, .msg_flags = 0};
     struct iovec    io;
     struct cmsghdr *cmsg;
     char            control[CMSG_SPACE(sizeof(int))];
@@ -267,7 +267,7 @@ int send_fd(int socket, int fd, int fd_num)
 
 int recv_fd(int socket, int *fd_num)
 {
-    struct msghdr   msg = {0};
+    struct msghdr   msg = {.msg_name = NULL, .msg_namelen = 0, .msg_iov = NULL, .msg_iovlen = 0, .msg_control = NULL, .msg_controllen = 0, .msg_flags = 0};
     struct iovec    io;
     struct cmsghdr *cmsg;
     char            control[CMSG_SPACE(sizeof(int))];
