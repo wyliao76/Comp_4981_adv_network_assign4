@@ -45,18 +45,18 @@ static ssize_t     write_fully(int fd, const void *buf, ssize_t size, int *err);
 static ssize_t     copy(int from, int to, int *err);
 
 static const MimeMapping Mime_map[] = {
-    {"txt",  "text/plain\r\n"                   },
-    {"html", "text/html\r\n"                    },
-    {"css",  "text/css\r\n"                     },
-    {"js",   "text/javascript\r\n"              },
-    {"csv",  "text/csv\r\n"                     },
-    {"jpeg", "image/jpeg\r\n"                   },
-    {"jpg",  "image/jpeg\r\n"                   },
-    {"png",  "image/png\r\n"                    },
-    {"gif",  "image/gif\r\n"                    },
-    {"json", "application/json\r\n"             },
-    {"swf",  "application/x-shockwave-flash\r\n"},
-    {"pdf",  "application/pdf\r\n"              }
+    {"txt",  "text/plain; charset=utf-8\r\n"      },
+    {"html", "text/html; charset=utf-8\r\n"       },
+    {"css",  "text/css; charset=utf-8\r\n"        },
+    {"js",   "text/javascript; charset=utf-8\r\n" },
+    {"csv",  "text/csv; charset=utf-8\r\n"        },
+    {"jpeg", "image/jpeg\r\n"                     },
+    {"jpg",  "image/jpeg\r\n"                     },
+    {"png",  "image/png\r\n"                      },
+    {"gif",  "image/gif\r\n"                      },
+    {"json", "application/json; charset=utf-8\r\n"},
+    {"swf",  "application/x-shockwave-flash\r\n"  },
+    {"pdf",  "application/pdf\r\n"                }
 };
 
 static const char *mime_to_string(const char *mime)

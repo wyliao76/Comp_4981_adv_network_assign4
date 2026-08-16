@@ -106,3 +106,14 @@ The files.txt file contains:
 <executable> <source files> <header files> <libraries>
 
 When you need to add/removes files to/from the project you must rerun the 4 steps above. 
+
+# launch the server
+./build/server -p 8000 -d -w 2
+-a address
+-p port
+-d debug
+-v verbose
+-w number of workers
+
+# compile share lib
+gcc -shared -fPIC -o libmylib.so src/http.c src/database.c src/networking.c src/fsm.c src/utils.c -I ./include
